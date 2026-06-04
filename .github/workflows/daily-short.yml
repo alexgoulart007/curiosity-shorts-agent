@@ -30,13 +30,10 @@ jobs:
           echo "$CLIENT_SECRET_JSON" > client_secret.json
           echo "$YOUTUBE_TOKEN_JSON" > youtube_token.json
 
-      - name: Install fonts
-        run: sudo apt-get update && sudo apt-get install -y fonts-liberation2
-
       - name: Run agent
         env:
           PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
           TTS_VOICE: "pt-BR-AntonioNeural"
           VIDEO_PRIVACY: "public"
-          VIDEO_FONT: "Liberation-Sans"
+          VIDEO_FONT: "DejaVuSans"
         run: python src/agent.py
