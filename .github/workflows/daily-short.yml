@@ -1,0 +1,38 @@
+name: Daily Short
+
+on:
+  schedule:
+    - cron: "0 11 * * *"
+  workflow_dispatch:
+
+jobs:
+  create-and-upload:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Create output dir
+        run: mkdir -p output
+
+      - name: Auth with YouTube
+        env:
+          CLIENT_SECRET_JSON: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+          YOUTUBE_TOKEN_JSON: ${{ secrets.YOUTUBE_TOKEN }}
+        run: |
+          echo "$CLIENT_SECRET_JSON" > client_secret.json
+          echo "$YOUTUBE_TOKEN_JSON" > youtube_token.json
+
+      - name: Run agent
+        env:
+          PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
+          TTS_VOICE: "pt-BR-AntonioNeural"
+          VIDEO_PRIVACY: "public"
+        run: python src/agent.py
