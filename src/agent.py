@@ -125,7 +125,7 @@ def create_short(video_path: str, audio_path: str, text: str, output_path: str):
             continue
         txt = TextClip(
             text=sentence,
-            font="Arial",
+            font=os.getenv("VIDEO_FONT", "Arial"),
             font_size=48,
             color="white",
             stroke_color="black",
