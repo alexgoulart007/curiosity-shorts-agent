@@ -2,3 +2,5 @@ client_secret.json
 youtube_token.json
 output/
 .env
+used_topics.json
+bg_music/

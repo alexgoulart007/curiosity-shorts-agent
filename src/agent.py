@@ -28,14 +28,51 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+USED_TOPICS_FILE = Path("used_topics.json")
+
+def load_used_topics() -> set[str]:
+    if USED_TOPICS_FILE.exists():
+        return set(json.loads(USED_TOPICS_FILE.read_text()))
+    return set()
+
+def save_used_topics(topics: set[str]):
+    USED_TOPICS_FILE.write_text(json.dumps(list(topics)))
+
 TOPICS = [
-    "curiosidades", "ciência", "história do mundo", "tecnologia",
-    "natureza", "astronomia", "animais", "geografia",
-    "invenções", "corpo humano", "biologia", "física",
-    "química", "medicina", "arte", "música", "filosofia",
-    "psicologia", "economia", "arqueologia", "paleontologia",
-    "geologia", "oceanografia", "mitologia", "gastronomia",
-    "esporte", "cinema", "literatura",
+    "Buraco negro", "Big Bang", "Sistema Solar", "Missão Apollo 11",
+    "Estrela", "Exploração espacial",
+    "Evolução humana", "DNA", "Fotossíntese",
+    "Extinção dos dinossauros", "Baleia-azul", "Recifes de coral",
+    "Animais em extinção", "Abelha",
+    "Império Romano", "Civilização Maia", "Antigo Egito",
+    "Pirâmides de Gizé", "Múmia", "Descobrimento do Brasil",
+    "Cérebro humano", "Sistema imunológico", "Vacina",
+    "Olho humano", "Coração (anatomia)",
+    "Invenção do telefone", "História da internet",
+    "Teoria da relatividade", "Eletricidade",
+    "Aurora polar", "Tsunami", "Vulcão", "Terremoto",
+    "Amazônia", "Fundo oceânico",
+    "História do chocolate", "Mitologia grega",
+    "Fóssil", "Fermentação", "Ciclo da água",
+    "Guerra Fria", "Guerra dos Cem Anos",
+    "Invenção da imprensa", "Revolução Francesa",
+    "Seda", "Rota da Seda",
+    "Como funciona o GPS", "Como funciona a internet",
+    "Origem da música", "História do cinema",
+    "Maior deserto do mundo", "Ilha mais remota do mundo",
+    "Língua mais falada do mundo", "Animal mais rápido do mundo",
+    "O que causa os sonhos", "Por que bocejamos",
+    "Por que o céu é azul", "Como funcionam os terremotos",
+    "Maior vulcão do mundo", "Fossa das Marianas",
+    "Animais bioluminescentes", "Camuflagem dos animais",
+    "Hibernação", "Migração dos animais",
+    "Plantas carnívoras", "Cogumelos alucinógenos",
+    "Idade Média", "Peste Negra",
+    "Vikings", "Castelos medievais",
+    "Cavalaria medieval", "Samurai",
+    "Grandes Navegações", "Brasil Colônia",
+    "Inconfidência Mineira", "Independência do Brasil",
+    "Origem do Carnaval", "História do Futebol",
 ]
 
 WIKI_LANG = "pt"
@@ -74,13 +111,18 @@ def _is_disambig(page) -> bool:
     return "página de desambiguação" in summary
 
 
-def fetch_fact(max_retries: int = 5) -> tuple[str, str]:
+def fetch_fact(max_retries: int = 10) -> tuple[str, str]:
     user_agent = "CuriosityShortsAgent/1.0 (github.com/user)"
     api = wikipediaapi.Wikipedia(user_agent, WIKI_LANG)
 
-    shuffled = TOPICS[:]
-    random.shuffle(shuffled)
-    selected = shuffled[:max_retries]
+    used = load_used_topics()
+    available = [t for t in TOPICS if t not in used]
+    if not available:
+        available = TOPICS[:]
+        used.clear()
+
+    random.shuffle(available)
+    selected = available[:max_retries]
 
     for topic in selected:
         page = api.page(topic)
@@ -90,22 +132,24 @@ def fetch_fact(max_retries: int = 5) -> tuple[str, str]:
         if _is_disambig(page):
             continue
 
-        summary = page.summary[:600].strip()
+        summary = page.summary[:2000].strip()
         summary = re.sub(r'\s+', ' ', summary)
 
         if not summary or len(summary) < 80:
             continue
 
-        if random.random() < 0.3:
+        if random.random() < 0.4:
             sections = [s for s in page.sections if s.text.strip() and len(s.text) > 100]
             if sections:
                 section = random.choice(sections)
-                summary = section.text[:600].strip()
+                summary = section.text[:2000].strip()
                 summary = re.sub(r'\s+', ' ', summary)
 
         hook = random.choice(HOOKS)
         intro = f"{hook} {topic}?"
         full_text = f"{intro}\n\n{summary}"
+        used.add(topic)
+        save_used_topics(used)
         return topic, full_text
 
     return "curiosidades", "Você sabia que a curiosidade move o mundo? Cada pergunta abre uma porta para um novo conhecimento!"
@@ -316,19 +360,9 @@ async def main():
         f"#curiosidades #vocesabia #fatos #{topic} #conhecimento"
     )
 
-    max_chars = 500
-    if len(fact) > max_chars:
-        truncated = fact[:max_chars]
-        last_end = max(truncated.rfind("."), truncated.rfind("!"), truncated.rfind("?"))
-        if last_end > 80:
-            truncated = truncated[:last_end + 1]
-        tts_text = truncated
-    else:
-        tts_text = fact
-
     print("[2/4] Gerando áudio...")
     audio_path = str(OUTPUT_DIR / "audio.mp3")
-    await generate_audio(tts_text, audio_path)
+    await generate_audio(fact, audio_path)
 
     print("[3/4] Buscando e editando vídeo...")
     video_path = str(OUTPUT_DIR / "stock.mp4")
@@ -338,7 +372,7 @@ async def main():
     bg_music = fetch_background_music()
 
     final_path = str(OUTPUT_DIR / "final.mp4")
-    create_short(video_path, audio_path, tts_text, final_path, topic, bg_music)
+    create_short(video_path, audio_path, fact, final_path, topic, bg_music)
 
     print("[4/4] Fazendo upload para o YouTube...")
     result = upload_short(final_path, title, description, tags)
