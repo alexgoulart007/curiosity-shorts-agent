@@ -13,8 +13,11 @@ from moviepy import (
     AudioFileClip,
     TextClip,
     CompositeVideoClip,
+    CompositeAudioClip,
+    concatenate_audioclips,
     concatenate_videoclips,
 )
+from moviepy.audio.fx.all import MultiplyVolume
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request
@@ -40,6 +43,19 @@ SCOPES = ["https://www.googleapis.com/auth/youtube.upload"]
 YOUTUBE_TOKEN_FILE = "youtube_token.json"
 OUTPUT_DIR = Path("output")
 OUTPUT_DIR.mkdir(exist_ok=True)
+BG_MUSIC_DIR = Path("bg_music")
+BG_MUSIC_DIR.mkdir(exist_ok=True)
+
+VOICES = ["pt-BR-AntonioNeural", "pt-BR-FranciscaNeural"]
+
+BG_MUSIC_URLS = [
+    "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3",
+    "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-2.mp3",
+    "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-3.mp3",
+    "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-4.mp3",
+    "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-5.mp3",
+    "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-6.mp3",
+]
 
 
 HOOKS = [
@@ -132,8 +148,35 @@ def fetch_video(query: str, output_path: str, per_page: int = 5) -> str | None:
     return output_path
 
 
+def fetch_background_music() -> str | None:
+    local_music = sorted(BG_MUSIC_DIR.glob("*.mp3"))
+    if local_music:
+        chosen = random.choice(local_music)
+        print(f"     Música local: {chosen.name}")
+        return str(chosen)
+
+    url = random.choice(BG_MUSIC_URLS)
+    name = url.rsplit("/", 1)[-1]
+    dest = BG_MUSIC_DIR / name
+    if dest.exists():
+        print(f"     Música: {name}")
+        return str(dest)
+
+    try:
+        r = requests.get(url, timeout=15)
+        r.raise_for_status()
+        with open(dest, "wb") as f:
+            f.write(r.content)
+        print(f"     Música baixada: {name}")
+        return str(dest)
+    except Exception as e:
+        print(f"     Aviso: não foi possível baixar música ({e})")
+        return None
+
+
 async def generate_audio(text: str, output_path: str):
-    voice = os.getenv("TTS_VOICE", "pt-BR-AntonioNeural")
+    voice = os.getenv("TTS_VOICE", random.choice(VOICES))
+    print(f"     Voz: {voice}")
     communicate = Communicate(text, voice)
     await communicate.save(output_path)
 
@@ -154,16 +197,30 @@ def make_text_clip(text: str, font_size: int, color: str = "white",
     )
 
 
-def create_short(video_path: str, audio_path: str, text: str, output_path: str, topic: str):
+def create_short(video_path: str, audio_path: str, text: str, output_path: str, topic: str, bg_music_path: str | None = None):
     video = VideoFileClip(video_path)
     audio = AudioFileClip(audio_path)
-    audio_duration = audio.duration
 
+    if bg_music_path:
+        try:
+            bg = AudioFileClip(bg_music_path)
+            bg = bg.with_effects([MultiplyVolume(0.12)])
+            bg_looped = concatenate_audioclips([bg] * max(1, int(audio.duration / bg.duration) + 1))
+            bg_looped = bg_looped.subclipped(0, audio.duration)
+            mixed = CompositeAudioClip([audio, bg_looped])
+            bg.close()
+        except Exception as e:
+            print(f"     Aviso: erro ao mixar música ({e})")
+            mixed = audio
+    else:
+        mixed = audio
+
+    audio_duration = mixed.duration
     max_loops = max(1, int(audio_duration / video.duration) + 1)
     clips = [video] * max_loops
     video_looped = concatenate_videoclips(clips)
     video_looped = video_looped.subclipped(0, audio_duration)
-    video_looped = video_looped.with_audio(audio)
+    video_looped = video_looped.with_audio(mixed)
     video_looped = video_looped.resized(height=1920)
     video_looped = video_looped.cropped(x_center=video_looped.w / 2, y_center=video_looped.h / 2, width=1080, height=1920)
 
@@ -265,8 +322,11 @@ async def main():
     video_path = str(OUTPUT_DIR / "stock.mp4")
     fetch_video(topic, video_path)
 
+    print("     Buscando música de fundo...")
+    bg_music = fetch_background_music()
+
     final_path = str(OUTPUT_DIR / "final.mp4")
-    create_short(video_path, audio_path, fact, final_path, topic)
+    create_short(video_path, audio_path, fact, final_path, topic, bg_music)
 
     print("[4/4] Fazendo upload para o YouTube...")
     result = upload_short(final_path, title, description, tags)
