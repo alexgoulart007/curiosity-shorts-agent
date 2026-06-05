@@ -316,9 +316,19 @@ async def main():
         f"#curiosidades #vocesabia #fatos #{topic} #conhecimento"
     )
 
+    max_chars = 500
+    if len(fact) > max_chars:
+        truncated = fact[:max_chars]
+        last_end = max(truncated.rfind("."), truncated.rfind("!"), truncated.rfind("?"))
+        if last_end > 80:
+            truncated = truncated[:last_end + 1]
+        tts_text = truncated
+    else:
+        tts_text = fact
+
     print("[2/4] Gerando áudio...")
     audio_path = str(OUTPUT_DIR / "audio.mp3")
-    await generate_audio(fact[:500], audio_path)
+    await generate_audio(tts_text, audio_path)
 
     print("[3/4] Buscando e editando vídeo...")
     video_path = str(OUTPUT_DIR / "stock.mp4")
@@ -328,7 +338,7 @@ async def main():
     bg_music = fetch_background_music()
 
     final_path = str(OUTPUT_DIR / "final.mp4")
-    create_short(video_path, audio_path, fact, final_path, topic, bg_music)
+    create_short(video_path, audio_path, tts_text, final_path, topic, bg_music)
 
     print("[4/4] Fazendo upload para o YouTube...")
     result = upload_short(final_path, title, description, tags)
