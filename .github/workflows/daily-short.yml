@@ -10,6 +10,8 @@ on:
 jobs:
   create-and-upload:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
 
@@ -45,9 +47,12 @@ jobs:
 
       - name: Save used topics
         if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           git config user.name "github-actions"
           git config user.email "github-actions@github.com"
           git add -f used_topics.json
           git diff --cached --quiet || git commit -m "Update used topics [skip ci]"
+          git remote set-url origin https://${GH_TOKEN}@github.com/alexgoulart007/curiosity-shorts-agent.git
           git push
