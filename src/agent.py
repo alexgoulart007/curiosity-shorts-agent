@@ -49,6 +49,14 @@ HOOKS = [
 ]
 
 
+def _is_disambig(page) -> bool:
+    title = page.title.lower()
+    if "(desambiguação)" in title:
+        return True
+    summary = page.summary[:200].lower()
+    return "página de desambiguação" in summary
+
+
 def fetch_fact(max_retries: int = 5) -> tuple[str, str]:
     user_agent = "CuriosityShortsAgent/1.0 (github.com/user)"
     api = wikipediaapi.Wikipedia(user_agent, WIKI_LANG)
@@ -62,7 +70,7 @@ def fetch_fact(max_retries: int = 5) -> tuple[str, str]:
 
         if not page.exists():
             continue
-        if page.is_disambiguation():
+        if _is_disambig(page):
             continue
 
         summary = page.summary[:600].strip()
