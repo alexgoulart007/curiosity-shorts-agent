@@ -42,7 +42,14 @@ OUTPUT_DIR = Path("output")
 OUTPUT_DIR.mkdir(exist_ok=True)
 
 
-def fetch_fact(max_retries: int = 5) -> str:
+HOOKS = [
+    "Você sabia que", "Isso vai te surpreender:", "Acredite se quiser:",
+    "Fato impressionante:", "Você não vai acreditar:",
+    "O que será que acontece quando", "Sabia que",
+]
+
+
+def fetch_fact(max_retries: int = 5) -> tuple[str, str]:
     user_agent = "CuriosityShortsAgent/1.0 (github.com/user)"
     api = wikipediaapi.Wikipedia(user_agent, WIKI_LANG)
 
@@ -61,7 +68,7 @@ def fetch_fact(max_retries: int = 5) -> str:
         summary = page.summary[:600].strip()
         summary = re.sub(r'\s+', ' ', summary)
 
-        if not summary or len(summary) < 50:
+        if not summary or len(summary) < 80:
             continue
 
         if random.random() < 0.3:
@@ -71,9 +78,12 @@ def fetch_fact(max_retries: int = 5) -> str:
                 summary = section.text[:600].strip()
                 summary = re.sub(r'\s+', ' ', summary)
 
-        return summary
+        hook = random.choice(HOOKS)
+        intro = f"{hook} {topic}?"
+        full_text = f"{intro}\n\n{summary}"
+        return topic, full_text
 
-    return "Você sabia que a curiosidade move o mundo? Cada pergunta abre uma porta para um novo conhecimento!"
+    return "curiosidades", "Você sabia que a curiosidade move o mundo? Cada pergunta abre uma porta para um novo conhecimento!"
 
 
 def fetch_video(query: str, output_path: str, per_page: int = 5) -> str | None:
@@ -94,10 +104,13 @@ def fetch_video(query: str, output_path: str, per_page: int = 5) -> str | None:
     if not data.get("videos"):
         return None
 
-    video = random.choice(data["videos"])
+    videos = [v for v in data["videos"] if v.get("duration", 0) >= 10 and v.get("width", 0) >= 720]
+    if not videos:
+        videos = data["videos"]
+    video = random.choice(videos)
     hd_file = None
     for file in video.get("video_files", []):
-        if file.get("quality") in ("hd", "sd") and file.get("width", 0) >= 360:
+        if file.get("quality") in ("hd", "sd") and file.get("width", 0) >= 720:
             hd_file = file
             break
     if not hd_file:
@@ -117,7 +130,23 @@ async def generate_audio(text: str, output_path: str):
     await communicate.save(output_path)
 
 
-def create_short(video_path: str, audio_path: str, text: str, output_path: str):
+def make_text_clip(text: str, font_size: int, color: str = "white",
+                   stroke_color: str = "black", stroke_width: int = 3,
+                   size: tuple = (900, None), duration: float = 3) -> TextClip:
+    return TextClip(
+        text=text,
+        font=os.getenv("VIDEO_FONT", "Arial"),
+        font_size=font_size,
+        color=color,
+        stroke_color=stroke_color,
+        stroke_width=stroke_width,
+        text_align="center",
+        size=size,
+        method="caption",
+    )
+
+
+def create_short(video_path: str, audio_path: str, text: str, output_path: str, topic: str):
     video = VideoFileClip(video_path)
     audio = AudioFileClip(audio_path)
     audio_duration = audio.duration
@@ -130,28 +159,37 @@ def create_short(video_path: str, audio_path: str, text: str, output_path: str):
     video_looped = video_looped.resized(height=1920)
     video_looped = video_looped.cropped(x_center=video_looped.w / 2, y_center=video_looped.h / 2, width=1080, height=1920)
 
-    sentences = re.split(r'(?<=[.!?])\s+', text)
-    seg_duration = audio_duration / max(len(sentences), 1)
+    hook_end = text.find("\n\n")
+    hook_text = text[:hook_end] if hook_end > 0 else "Você sabia?"
+    body_text = text[hook_end + 2:] if hook_end > 0 else text
+
+    sentences = re.split(r'(?<=[.!?])\s+', body_text)
+    body_duration = audio_duration - 3.5 - 2.5
+    seg_duration = body_duration / max(len(sentences), 1)
 
     txt_clips = []
+
+    hook_txt = make_text_clip(hook_text, font_size=56, color="#FFD700",
+                               stroke_color="black", stroke_width=3,
+                               duration=3.5)
+    hook_txt = hook_txt.with_position(("center", "center")).with_start(0).with_duration(3.5)
+    txt_clips.append(hook_txt)
+
     for i, sentence in enumerate(sentences):
         sentence = sentence.strip()
         if not sentence:
             continue
-        txt = TextClip(
-            text=sentence,
-            font=os.getenv("VIDEO_FONT", "Arial"),
-            font_size=48,
-            color="white",
-            stroke_color="black",
-            stroke_width=2,
-            text_align="center",
-            size=(900, None),
-            method="caption",
-        )
-        start = i * seg_duration
+        txt = make_text_clip(sentence, font_size=50, duration=seg_duration)
+        start = 3.5 + (i * seg_duration)
         txt = txt.with_position(("center", "center")).with_start(start).with_duration(seg_duration)
         txt_clips.append(txt)
+
+    cta_start = audio_duration - 2.5
+    cta_txt = make_text_clip("Gostou? Inscreva-se! 🔔", font_size=44, color="#FF4444",
+                              stroke_color="black", stroke_width=3,
+                              duration=2.5)
+    cta_txt = cta_txt.with_position(("center", "center")).with_start(cta_start).with_duration(2.5)
+    txt_clips.append(cta_txt)
 
     final = CompositeVideoClip([video_looped] + txt_clips)
     final.write_videofile(output_path, codec="libx264", audio_codec="aac", fps=24, logger=None)
@@ -197,11 +235,19 @@ def upload_short(file_path: str, title: str, description: str, tags: list[str] |
 
 async def main():
     print("[1/4] Buscando fato curioso...")
-    fact = fetch_fact()
+    topic, fact = fetch_fact()
+    print(f"     Tópico: {topic}")
     print(f"     Fato: {fact[:80]}...")
 
-    title = f"Você sabia? 🧠 #{random.randint(1000, 9999)}"
-    description = f"{fact}\n\nInscreva-se para mais curiosidades! 🧠\n#curiosidades #vocesabia #fatos"
+    title = f"{topic.upper()} 🧠 Curiosidade #{(random.randint(1000, 9999))}"
+    tags = ["curiosidades", "vocesabia", "fatos", topic, "conhecimento", "aprender"]
+    description = (
+        f"{fact}\n\n"
+        f"---\n"
+        f"👍 Gostou? Deixa seu like e inscreva-se para mais curiosidades!\n"
+        f"🔔 Ative o sininho para não perder nenhum vídeo\n\n"
+        f"#curiosidades #vocesabia #fatos #{topic} #conhecimento"
+    )
 
     print("[2/4] Gerando áudio...")
     audio_path = str(OUTPUT_DIR / "audio.mp3")
@@ -209,15 +255,13 @@ async def main():
 
     print("[3/4] Buscando e editando vídeo...")
     video_path = str(OUTPUT_DIR / "stock.mp4")
-    query_words = fact.split()[:3]
-    query = " ".join(query_words)
-    fetch_video(query, video_path)
+    fetch_video(topic, video_path)
 
     final_path = str(OUTPUT_DIR / "final.mp4")
-    create_short(video_path, audio_path, fact, final_path)
+    create_short(video_path, audio_path, fact, final_path, topic)
 
     print("[4/4] Fazendo upload para o YouTube...")
-    result = upload_short(final_path, title, description)
+    result = upload_short(final_path, title, description, tags)
     print(f"     Upload OK! ID: {result['id']}")
     print(f"     Link: https://youtube.com/shorts/{result['id']}")
 
