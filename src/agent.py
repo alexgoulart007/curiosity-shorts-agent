@@ -25,9 +25,13 @@ from dotenv import load_dotenv
 load_dotenv()
 
 TOPICS = [
-    "curiosidades", "ciência", "história", "tecnologia",
-    "natureza", "espaço", "animais", "geografia",
-    "invenções", "corpo humano", "curiosidades históricas",
+    "curiosidades", "ciência", "história do mundo", "tecnologia",
+    "natureza", "astronomia", "animais", "geografia",
+    "invenções", "corpo humano", "biologia", "física",
+    "química", "medicina", "arte", "música", "filosofia",
+    "psicologia", "economia", "arqueologia", "paleontologia",
+    "geologia", "oceanografia", "mitologia", "gastronomia",
+    "esporte", "cinema", "literatura",
 ]
 
 WIKI_LANG = "pt"
@@ -38,27 +42,38 @@ OUTPUT_DIR = Path("output")
 OUTPUT_DIR.mkdir(exist_ok=True)
 
 
-def fetch_fact() -> str:
+def fetch_fact(max_retries: int = 5) -> str:
     user_agent = "CuriosityShortsAgent/1.0 (github.com/user)"
     api = wikipediaapi.Wikipedia(user_agent, WIKI_LANG)
 
-    topic = random.choice(TOPICS)
-    page = api.page(topic)
+    shuffled = TOPICS[:]
+    random.shuffle(shuffled)
+    selected = shuffled[:max_retries]
 
-    if not page.exists():
-        return "Você sabia que a Wikipédia tem milhões de artigos? Pois é, aprenda algo novo todo dia!"
+    for topic in selected:
+        page = api.page(topic)
 
-    summary = page.summary[:600].strip()
-    summary = re.sub(r'\s+', ' ', summary)
+        if not page.exists():
+            continue
+        if page.is_disambiguation():
+            continue
 
-    if random.random() < 0.3:
-        sections = [s for s in page.sections if s.text.strip()]
-        if sections:
-            section = random.choice(sections)
-            summary = section.text[:600].strip()
-            summary = re.sub(r'\s+', ' ', summary)
+        summary = page.summary[:600].strip()
+        summary = re.sub(r'\s+', ' ', summary)
 
-    return summary if summary else "Fato interessante não encontrado. Tente novamente!"
+        if not summary or len(summary) < 50:
+            continue
+
+        if random.random() < 0.3:
+            sections = [s for s in page.sections if s.text.strip() and len(s.text) > 100]
+            if sections:
+                section = random.choice(sections)
+                summary = section.text[:600].strip()
+                summary = re.sub(r'\s+', ' ', summary)
+
+        return summary
+
+    return "Você sabia que a curiosidade move o mundo? Cada pergunta abre uma porta para um novo conhecimento!"
 
 
 def fetch_video(query: str, output_path: str, per_page: int = 5) -> str | None:
