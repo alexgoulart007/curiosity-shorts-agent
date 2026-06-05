@@ -5,6 +5,7 @@ import random
 import re
 from pathlib import Path
 
+import numpy as np
 import requests
 import wikipediaapi
 from edge_tts import Communicate
@@ -14,10 +15,10 @@ from moviepy import (
     TextClip,
     CompositeVideoClip,
     CompositeAudioClip,
+    AudioArrayClip,
     concatenate_audioclips,
     concatenate_videoclips,
 )
-from moviepy.audio.fx.all import MultiplyVolume
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request
@@ -204,8 +205,9 @@ def create_short(video_path: str, audio_path: str, text: str, output_path: str, 
     if bg_music_path:
         try:
             bg = AudioFileClip(bg_music_path)
-            bg = bg.with_effects([MultiplyVolume(0.12)])
-            bg_looped = concatenate_audioclips([bg] * max(1, int(audio.duration / bg.duration) + 1))
+            bg_samples = bg.to_soundarray(fps=44100)
+            bg_low = AudioArrayClip(bg_samples * 0.12, fps=44100)
+            bg_looped = concatenate_audioclips([bg_low] * max(1, int(audio.duration / bg.duration) + 1))
             bg_looped = bg_looped.subclipped(0, audio.duration)
             mixed = CompositeAudioClip([audio, bg_looped])
             bg.close()
