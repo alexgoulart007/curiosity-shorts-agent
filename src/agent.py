@@ -6,6 +6,7 @@ import re
 from pathlib import Path
 
 import numpy as np
+from PIL import Image
 import requests
 import wikipediaapi
 from edge_tts import Communicate
@@ -312,9 +313,28 @@ def _search_pexels(headers: dict, params: dict) -> list:
         return []
 
 
-def fetch_video(topic: str, output_path: str, per_page: int = 8) -> str | None:
+def _apply_zoom(clip, zoom_max: float = 1.12):
+    """Aplica zoom lento e progressivo de 1.0 ate zoom_max."""
+    duration = clip.duration
+    def make_frame(get_frame, t):
+        progress = t / duration if duration > 0 else 0
+        zoom = 1.0 + (zoom_max - 1.0) * progress
+        frame = get_frame(t)
+        img = Image.fromarray(frame)
+        w, h = img.size
+        new_w = int(w * zoom)
+        new_h = int(h * zoom)
+        img = img.resize((new_w, new_h), Image.LANCZOS)
+        left = (new_w - w) // 2
+        top = (new_h - h) // 2
+        img = img.crop((left, top, left + w, top + h))
+        return np.array(img)
+    return clip.transform(make_frame)
+
+
+def fetch_videos(topic: str, output_dir: Path, num_clips: int = 3) -> list[str]:
     headers = {"Authorization": PEXELS_API_KEY}
-    base_params = {"per_page": per_page, "orientation": "portrait", "min_duration": 10}
+    base_params = {"per_page": num_clips * 3, "orientation": "portrait", "min_duration": 10}
 
     queries = TOPIC_QUERIES.get(topic, [topic])
 
@@ -338,23 +358,28 @@ def fetch_video(topic: str, output_path: str, per_page: int = 8) -> str | None:
         all_videos = _search_pexels(headers, params)
     if not all_videos:
         print("     Aviso: nenhum video encontrado no Pexels")
-        return None
+        return []
 
-    video = random.choice(all_videos)
-    hd_file = None
-    for file in video.get("video_files", []):
-        if file.get("quality") in ("hd", "sd") and file.get("width", 0) >= 720:
-            hd_file = file
-            break
-    if not hd_file:
-        hd_file = video["video_files"][0]
+    random.shuffle(all_videos)
+    selected = all_videos[:num_clips]
+    paths = []
+    for i, video_data in enumerate(selected):
+        hd_file = None
+        for file in video_data.get("video_files", []):
+            if file.get("quality") in ("hd", "sd") and file.get("width", 0) >= 720:
+                hd_file = file
+                break
+        if not hd_file:
+            hd_file = video_data["video_files"][0]
 
-    link = hd_file["link"]
-    r = requests.get(link, timeout=30)
-    with open(output_path, "wb") as f:
-        f.write(r.content)
+        path = str(output_dir / f"stock_{i}.mp4")
+        r = requests.get(hd_file["link"], timeout=30)
+        with open(path, "wb") as f:
+            f.write(r.content)
+        paths.append(path)
 
-    return output_path
+    print(f"     Baixados {len(paths)} clipes do Pexels")
+    return paths
 
 
 def fetch_background_music() -> str | None:
@@ -426,9 +451,8 @@ def _make_highlight_clip(highlight: str, font_size: int = 76,
     return txt.with_position(("center", 320)).with_start(start).with_duration(duration)
 
 
-def create_short(video_path: str, audio_path: str, text: str, output_path: str,
+def create_short(video_paths: list[str], audio_path: str, text: str, output_path: str,
                  topic: str, bg_music_path: str | None = None):
-    video = VideoFileClip(video_path)
     audio = AudioFileClip(audio_path)
 
     if bg_music_path:
@@ -447,14 +471,22 @@ def create_short(video_path: str, audio_path: str, text: str, output_path: str,
         mixed = audio
 
     audio_duration = mixed.duration
-    max_loops = max(1, int(audio_duration / video.duration) + 1)
-    clips = [video] * max_loops
-    video_looped = concatenate_videoclips(clips)
-    video_looped = video_looped.subclipped(0, audio_duration)
-    video_looped = video_looped.with_audio(mixed)
-    video_looped = video_looped.resized(height=1920)
-    video_looped = video_looped.cropped(x_center=video_looped.w / 2, y_center=video_looped.h / 2,
-                                        width=1080, height=1920)
+
+    loaded = []
+    for vp in video_paths:
+        clip = VideoFileClip(vp)
+        clip = _apply_zoom(clip)
+        loaded.append(clip)
+
+    video_comp = concatenate_videoclips(loaded)
+
+    loops = max(1, int(audio_duration / video_comp.duration) + 1)
+    video_comp = concatenate_videoclips([video_comp] * loops)
+    video_comp = video_comp.subclipped(0, audio_duration)
+    video_comp = video_comp.with_audio(mixed)
+    video_comp = video_comp.resized(height=1920)
+    video_comp = video_comp.cropped(x_center=video_comp.w / 2, y_center=video_comp.h / 2,
+                                    width=1080, height=1920)
 
     hook_end = text.find("\n\n")
     hook_text = text[:hook_end] if hook_end > 0 else "Você sabia?"
@@ -510,10 +542,10 @@ def create_short(video_path: str, audio_path: str, text: str, output_path: str,
         .with_start(cta_start).with_duration(CTA_DURATION)
     txt_clips.append(cta_txt)
 
-    final = CompositeVideoClip([video_looped] + txt_clips)
+    final = CompositeVideoClip([video_comp] + txt_clips)
     final.write_videofile(output_path, codec="libx264", audio_codec="aac", fps=24, logger=None)
     final.close()
-    video.close()
+    video_comp.close()
     audio.close()
 
 
@@ -602,14 +634,16 @@ async def main():
     await generate_audio(fact, audio_path)
 
     print("[3/4] Buscando e editando vídeo...")
-    video_path = str(OUTPUT_DIR / "stock.mp4")
-    fetch_video(topic, video_path)
+    video_paths = fetch_videos(topic, OUTPUT_DIR, num_clips=3)
+    if not video_paths:
+        print("     Aviso: sem videos do Pexels, pulando...")
+        return
 
     print("     Buscando música de fundo...")
     bg_music = fetch_background_music()
 
     final_path = str(OUTPUT_DIR / "final.mp4")
-    create_short(video_path, audio_path, fact, final_path, topic, bg_music)
+    create_short(video_paths, audio_path, fact, final_path, topic, bg_music)
 
     print("[4/4] Fazendo upload para o YouTube...")
     result = upload_short(final_path, title, description, tags)
