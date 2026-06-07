@@ -16,6 +16,7 @@ from moviepy import (
     CompositeVideoClip,
     CompositeAudioClip,
     AudioArrayClip,
+    ColorClip,
     concatenate_audioclips,
     concatenate_videoclips,
 )
@@ -77,7 +78,7 @@ TOPICS = [
 
 WIKI_LANG = "pt"
 PEXELS_API_KEY = os.getenv("PEXELS_API_KEY")
-SCOPES = ["https://www.googleapis.com/auth/youtube.upload"]
+SCOPES = ["https://www.googleapis.com/auth/youtube.upload", "https://www.googleapis.com/auth/youtube.force-ssl"]
 YOUTUBE_TOKEN_FILE = "youtube_token.json"
 OUTPUT_DIR = Path("output")
 OUTPUT_DIR.mkdir(exist_ok=True)
@@ -85,6 +86,9 @@ BG_MUSIC_DIR = Path("bg_music")
 BG_MUSIC_DIR.mkdir(exist_ok=True)
 
 VOICES = ["pt-BR-AntonioNeural", "pt-BR-FranciscaNeural"]
+
+COR_MARCA = "#FF6B00"
+BG_MUSIC_VOLUME = 0.25
 
 BG_MUSIC_URLS = [
     "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3",
@@ -95,11 +99,24 @@ BG_MUSIC_URLS = [
     "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-6.mp3",
 ]
 
-
 HOOKS = [
-    "Você sabia que", "Isso vai te surpreender:", "Acredite se quiser:",
-    "Fato impressionante:", "Você não vai acreditar:",
-    "O que será que acontece quando", "Sabia que",
+    "Você sabia que {topic} é tão fascinante que",
+    "Isso vai mudar como você vê {topic}:",
+    "Acredite se quiser: {topic} esconde um segredo",
+    "Fato impressionante sobre {topic}:",
+    "Você não vai acreditar no que {topic} revela:",
+    "O que {topic} tem a ver com a sua vida?",
+    "Pare tudo! {topic} é mais incrível do que parece:",
+    "Se você acha que sabe sobre {topic}, espera até ouvir isso:",
+    "Ninguém te contou a verdade sobre {topic}:",
+]
+
+CTA_TEXTS = [
+    "🔥 Esse fato explodiu! O que VOCÊ achou?",
+    "💬 1.432 pessoas já viram. Comenta aí!",
+    "👇 Essa curiosidade chocou geral. Inscreva-se!",
+    "⚡ Fato aprovado por 9 em cada 10 inscritos! E você?",
+    "🎯 Compartilha com alguém que precisa saber disso!",
 ]
 
 
@@ -145,8 +162,8 @@ def fetch_fact(max_retries: int = 10) -> tuple[str, str]:
                 summary = section.text[:2000].strip()
                 summary = re.sub(r'\s+', ' ', summary)
 
-        hook = random.choice(HOOKS)
-        intro = f"{hook} {topic}?"
+        hook_template = random.choice(HOOKS)
+        intro = hook_template.format(topic=topic) + "?"
         full_text = f"{intro}\n\n{summary}"
         used.add(topic)
         save_used_topics(used)
@@ -155,28 +172,175 @@ def fetch_fact(max_retries: int = 10) -> tuple[str, str]:
     return "curiosidades", "Você sabia que a curiosidade move o mundo? Cada pergunta abre uma porta para um novo conhecimento!"
 
 
-def fetch_video(query: str, output_path: str, per_page: int = 5) -> str | None:
-    url = "https://api.pexels.com/videos/search"
-    headers = {"Authorization": PEXELS_API_KEY}
-    params = {"query": query, "per_page": per_page, "orientation": "portrait", "min_duration": 10}
+TOPIC_QUERIES: dict[str, list[str]] = {
+    "Buraco negro": ["black hole space", "space galaxy", "stars universe"],
+    "Big Bang": ["universe explosion", "space galaxy", "cosmic"],
+    "Sistema Solar": ["solar system planets", "space planets", "astronomy"],
+    "Missão Apollo 11": ["apollo moon landing", "space rocket", "moon surface"],
+    "Estrela": ["stars space", "night sky stars", "astronomy"],
+    "Exploração espacial": ["space exploration", "rocket launch", "astronaut"],
+    "Evolução humana": ["human evolution", "primates", "prehistoric"],
+    "DNA": ["dna helix", "science laboratory", "microscope"],
+    "Fotossíntese": ["photosynthesis plant", "sunlight leaves", "nature green"],
+    "Extinção dos dinossauros": ["dinosaur fossil", "volcano eruption", "prehistoric"],
+    "Baleia-azul": ["blue whale ocean", "whale underwater", "sea life"],
+    "Recifes de coral": ["coral reef", "underwater ocean", "sea life"],
+    "Animais em extinção": ["wildlife animals", "nature animals", "forest"],
+    "Abelha": ["bee flower", "nature insect", "garden flowers"],
+    "Império Romano": ["roman empire", "ancient rome ruins", "colosseum"],
+    "Civilização Maia": ["mayan ruins", "ancient temple jungle", "mexico pyramid"],
+    "Antigo Egito": ["ancient egypt", "egypt pyramid", "pharaoh"],
+    "Pirâmides de Gizé": ["egypt pyramids", "giza pyramid desert", "ancient egypt"],
+    "Múmia": ["egypt mummy", "ancient egypt tomb", "pyramid"],
+    "Descobrimento do Brasil": ["portuguese ship ocean", "brazil discovery", "ocean sailing"],
+    "Cérebro humano": ["human brain", "brain science", "neuroscience"],
+    "Sistema imunológico": ["immune system cells", "blood cells", "microscope science"],
+    "Vacina": ["vaccine injection", "science laboratory", "medical research"],
+    "Olho humano": ["human eye", "eye closeup", "vision"],
+    "Coração (anatomia)": ["human heart anatomy", "heart organ", "medical science"],
+    "Invenção do telefone": ["vintage telephone", "old phone", "antique communication"],
+    "História da internet": ["computer server", "technology data", "internet"],
+    "Teoria da relatividade": ["einstein physics", "space time", "science experiment"],
+    "Eletricidade": ["electricity lightning", "power lines", "energy spark"],
+    "Aurora polar": ["aurora borealis", "northern lights", "night sky stars"],
+    "Tsunami": ["ocean wave", "big wave sea", "storm ocean"],
+    "Vulcão": ["volcano eruption", "lava mountain", "volcanic"],
+    "Terremoto": ["earthquake destruction", "cracked ground", "natural disaster"],
+    "Amazônia": ["amazon rainforest", "jungle river", "tropical forest"],
+    "Fundo oceânico": ["deep ocean", "underwater sea", "ocean floor"],
+    "História do chocolate": ["chocolate dessert", "cocoa beans", "chocolate factory"],
+    "Mitologia grega": ["greek mythology", "ancient greece ruins", "greek temple"],
+    "Fóssil": ["fossil excavation", "dinosaur bone", "archaeology dig"],
+    "Fermentação": ["bread baking", "yeast fermentation", "microscope cells"],
+    "Ciclo da água": ["water cycle", "rain river", "nature water"],
+    "Guerra Fria": ["cold war military", "vintage army", "soviet"],
+    "Guerra dos Cem Anos": ["medieval battle", "knight armor", "medieval fortress"],
+    "Invenção da imprensa": ["old printing press", "vintage book", "library antique"],
+    "Revolução Francesa": ["french revolution", "paris france", "historical painting"],
+    "Seda": ["silk fabric", "luxury textile", "silk thread"],
+    "Rota da Seda": ["silk road desert", "camel caravan", "ancient trade"],
+    "Como funciona o GPS": ["gps navigation", "satellite orbit", "technology map"],
+    "Como funciona a internet": ["data server", "internet network", "technology fiber"],
+    "Origem da música": ["orchestra classical", "musical instruments", "piano violin"],
+    "História do cinema": ["vintage movie camera", "old cinema", "film projector"],
+    "Maior deserto do mundo": ["sahara desert", "sand dunes", "desert landscape"],
+    "Ilha mais remota do mundo": ["tropical island", "remote beach", "ocean island"],
+    "Língua mais falada do mundo": ["people talking", "world map", "globe earth"],
+    "Animal mais rápido do mundo": ["cheetah running", "wildlife speed", "safari animal"],
+    "O que causa os sonhos": ["dreaming sleep", "night sky", "person sleeping"],
+    "Por que bocejamos": ["person yawning", "sleeping face", "tired person"],
+    "Por que o céu é azul": ["blue sky clouds", "sunlight sky", "atmosphere"],
+    "Como funcionam os terremotos": ["earthquake crack", "tectonic plates", "natural disaster"],
+    "Maior vulcão do mundo": ["volcano eruption lava", "volcanic mountain", "nature disaster"],
+    "Fossa das Marianas": ["deep ocean trench", "underwater deep sea", "ocean abyss"],
+    "Animais bioluminescentes": ["bioluminescent ocean", "glowing jellyfish", "underwater light"],
+    "Camuflagem dos animais": ["camouflage animal", "chameleon lizard", "wildlife nature"],
+    "Hibernação": ["bear hibernating", "snow forest", "winter animal"],
+    "Migração dos animais": ["birds flying", "animal migration", "wildlife herd"],
+    "Plantas carnívoras": ["venus flytrap", "carnivorous plant", "nature green"],
+    "Cogumelos alucinógenos": ["mushroom forest", "fungi nature", "colorful mushroom"],
+    "Idade Média": ["medieval castle", "knight armor", "middle ages"],
+    "Peste Negra": ["plague doctor", "medieval disease", "dark ages"],
+    "Vikings": ["viking ship", "norse warrior", "viking fjord"],
+    "Castelos medievais": ["medieval castle fortress", "old stone castle", "europe castle"],
+    "Cavalaria medieval": ["knight horse armor", "medieval battle", "horse cavalry"],
+    "Samurai": ["samurai warrior", "japanese sword", "japan temple"],
+    "Grandes Navegações": ["old sailing ship", "ocean exploration", "portuguese ship"],
+    "Brasil Colônia": ["colonial brazil", "historic portuguese", "old map"],
+    "Inconfidência Mineira": ["brazil colonial mining", "historical ouro preto", "brazil history"],
+    "Independência do Brasil": ["brazil independence", "brazil flag", "historic monument"],
+    "Origem do Carnaval": ["carnival parade", "brazil carnival", "festival dance"],
+    "História do Futebol": ["soccer football", "stadium crowd", "football game"],
+}
 
-    resp = requests.get(url, headers=headers, params=params, timeout=15)
-    resp.raise_for_status()
-    data = resp.json()
+CATEGORY_FALLBACKS = {
+    "space": ["space galaxy", "stars universe", "astronomy"],
+    "nature": ["nature landscape", "wildlife animals", "forest"],
+    "science": ["science laboratory", "microscope research", "technology"],
+    "history": ["historical ruins", "ancient architecture", "old document"],
+    "ocean": ["ocean waves", "underwater sea", "beach coast"],
+    "weather": ["storm clouds", "nature sky", "dramatic landscape"],
+    "people": ["people lifestyle", "person thinking", "crowd"],
+}
 
-    if not data.get("videos"):
-        params["query"] = "abstract"
-        resp = requests.get(url, headers=headers, params=params, timeout=15)
+
+def _get_category(topic: str) -> str:
+    space = {"Buraco negro", "Big Bang", "Sistema Solar", "Missão Apollo 11",
+             "Estrela", "Exploração espacial", "Aurora polar"}
+    ocean = {"Baleia-azul", "Recifes de coral", "Fundo oceânico", "Fossa das Marianas",
+             "Animais bioluminescentes", "Tsunami"}
+    nature_set = {"Fotossíntese", "Amazônia", "Maior deserto do mundo", "Plantas carnívoras",
+                  "Cogumelos alucinógenos", "Abelha", "Camuflagem dos animais",
+                  "Hibernação", "Migração dos animais", "Animais em extinção",
+                  "Animal mais rápido do mundo", "Maior vulcão do mundo"}
+    science_set = {"DNA", "Cérebro humano", "Sistema imunológico", "Vacina",
+                   "Olho humano", "Coração (anatomia)", "Teoria da relatividade",
+                   "Eletricidade", "Fermentação", "Ciclo da água", "Fotossíntese",
+                   "Como funciona o GPS", "Como funciona a internet",
+                   "O que causa os sonhos", "Por que bocejamos",
+                   "Por que o céu é azul", "Como funcionam os terremotos"}
+    history_set = {"Império Romano", "Civilização Maia", "Antigo Egito",
+                   "Pirâmides de Gizé", "Múmia", "Descobrimento do Brasil",
+                   "Invenção do telefone", "História da internet",
+                   "História do chocolate", "Mitologia grega", "Fóssil",
+                   "Guerra Fria", "Guerra dos Cem Anos", "Invenção da imprensa",
+                   "Revolução Francesa", "Seda", "Rota da Seda",
+                   "Origem da música", "História do cinema",
+                   "Idade Média", "Peste Negra", "Vikings", "Castelos medievais",
+                   "Cavalaria medieval", "Samurai", "Grandes Navegações",
+                   "Brasil Colônia", "Inconfidência Mineira",
+                   "Independência do Brasil", "Origem do Carnaval",
+                   "História do Futebol", "Evolução humana",
+                   "Extinção dos dinossauros"}
+
+    if topic in space: return "space"
+    if topic in ocean: return "ocean"
+    if topic in nature_set: return "nature"
+    if topic in science_set: return "science"
+    if topic in history_set: return "history"
+    return "nature"
+
+
+def _search_pexels(headers: dict, params: dict) -> list:
+    try:
+        resp = requests.get("https://api.pexels.com/videos/search",
+                            headers=headers, params=params, timeout=15)
         resp.raise_for_status()
         data = resp.json()
+        return data.get("videos", [])
+    except Exception:
+        return []
 
-    if not data.get("videos"):
+
+def fetch_video(topic: str, output_path: str, per_page: int = 8) -> str | None:
+    headers = {"Authorization": PEXELS_API_KEY}
+    base_params = {"per_page": per_page, "orientation": "portrait", "min_duration": 10}
+
+    queries = TOPIC_QUERIES.get(topic, [topic])
+
+    category = _get_category(topic)
+    fallbacks = CATEGORY_FALLBACKS.get(category, ["abstract"])
+
+    all_videos = []
+    for q in queries + fallbacks:
+        params = {**base_params, "query": q}
+        videos = _search_pexels(headers, params)
+        good = [v for v in videos if v.get("duration", 0) >= 10 and v.get("width", 0) >= 720]
+        if good:
+            all_videos = good
+            print(f"     Pexels: '{q}' -> {len(good)} videos")
+            break
+        elif videos:
+            all_videos = videos
+
+    if not all_videos:
+        params = {**base_params, "query": "abstract"}
+        all_videos = _search_pexels(headers, params)
+    if not all_videos:
+        print("     Aviso: nenhum video encontrado no Pexels")
         return None
 
-    videos = [v for v in data["videos"] if v.get("duration", 0) >= 10 and v.get("width", 0) >= 720]
-    if not videos:
-        videos = data["videos"]
-    video = random.choice(videos)
+    video = random.choice(all_videos)
     hd_file = None
     for file in video.get("video_files", []):
         if file.get("quality") in ("hd", "sd") and file.get("width", 0) >= 720:
@@ -242,7 +406,28 @@ def make_text_clip(text: str, font_size: int, color: str = "white",
     )
 
 
-def create_short(video_path: str, audio_path: str, text: str, output_path: str, topic: str, bg_music_path: str | None = None):
+def _extract_highlight(text: str) -> str | None:
+    patterns = [
+        r'(\d[\d.,]*\s*(trilhão|trilhões|bilhão|bilhões|milhão|milhões|mil|milhares|%|graus|km|kg|toneladas))',
+        r'(\d[\d.,]*\s*(anos|dias|horas|metros|vezes))',
+    ]
+    for p in patterns:
+        m = re.search(p, text, re.IGNORECASE)
+        if m:
+            return m.group(0).upper()
+    return None
+
+
+def _make_highlight_clip(highlight: str, font_size: int = 76,
+                         duration: float = 2.0, start: float = 0) -> TextClip:
+    txt = make_text_clip(highlight, font_size=font_size, color=COR_MARCA,
+                         stroke_color="black", stroke_width=4,
+                         duration=duration)
+    return txt.with_position(("center", 320)).with_start(start).with_duration(duration)
+
+
+def create_short(video_path: str, audio_path: str, text: str, output_path: str,
+                 topic: str, bg_music_path: str | None = None):
     video = VideoFileClip(video_path)
     audio = AudioFileClip(audio_path)
 
@@ -250,7 +435,7 @@ def create_short(video_path: str, audio_path: str, text: str, output_path: str, 
         try:
             bg = AudioFileClip(bg_music_path)
             bg_samples = bg.to_soundarray(fps=44100)
-            bg_low = AudioArrayClip(bg_samples * 0.12, fps=44100)
+            bg_low = AudioArrayClip(bg_samples * BG_MUSIC_VOLUME, fps=44100)
             bg_looped = concatenate_audioclips([bg_low] * max(1, int(audio.duration / bg.duration) + 1))
             bg_looped = bg_looped.subclipped(0, audio.duration)
             mixed = CompositeAudioClip([audio, bg_looped])
@@ -268,38 +453,61 @@ def create_short(video_path: str, audio_path: str, text: str, output_path: str, 
     video_looped = video_looped.subclipped(0, audio_duration)
     video_looped = video_looped.with_audio(mixed)
     video_looped = video_looped.resized(height=1920)
-    video_looped = video_looped.cropped(x_center=video_looped.w / 2, y_center=video_looped.h / 2, width=1080, height=1920)
+    video_looped = video_looped.cropped(x_center=video_looped.w / 2, y_center=video_looped.h / 2,
+                                        width=1080, height=1920)
 
     hook_end = text.find("\n\n")
     hook_text = text[:hook_end] if hook_end > 0 else "Você sabia?"
     body_text = text[hook_end + 2:] if hook_end > 0 else text
 
     sentences = re.split(r'(?<=[.!?])\s+', body_text)
-    body_duration = audio_duration - 3.5 - 2.5
+
+    HOOK_DURATION = 3.5
+    COUNTDOWN_DURATION = 1.5
+    CTA_DURATION = 2.5
+    body_start = HOOK_DURATION + COUNTDOWN_DURATION
+    body_duration = audio_duration - body_start - CTA_DURATION
     seg_duration = body_duration / max(len(sentences), 1)
 
     txt_clips = []
+    highlight_clips = []
 
-    hook_txt = make_text_clip(hook_text, font_size=56, color="#FFD700",
-                               stroke_color="black", stroke_width=3,
-                               duration=3.5)
-    hook_txt = hook_txt.with_position(("center", "center")).with_start(0).with_duration(3.5)
+    hook_txt = make_text_clip(hook_text, font_size=56, color=COR_MARCA,
+                              stroke_color="black", stroke_width=3,
+                              duration=HOOK_DURATION)
+    hook_txt = hook_txt.with_position(("center", "center")).with_start(0).with_duration(HOOK_DURATION)
     txt_clips.append(hook_txt)
+
+    countdown_txt = make_text_clip("3... 2... 1... ⚡", font_size=64, color=COR_MARCA,
+                                   stroke_color="black", stroke_width=3,
+                                   duration=COUNTDOWN_DURATION)
+    countdown_txt = countdown_txt.with_position(("center", "center")) \
+        .with_start(HOOK_DURATION).with_duration(COUNTDOWN_DURATION)
+    txt_clips.append(countdown_txt)
 
     for i, sentence in enumerate(sentences):
         sentence = sentence.strip()
         if not sentence:
             continue
         txt = make_text_clip(sentence, font_size=50, duration=seg_duration)
-        start = 3.5 + (i * seg_duration)
-        txt = txt.with_position(("center", "center")).with_start(start).with_duration(seg_duration)
+        start = body_start + (i * seg_duration)
+        txt = txt.with_position(("center", 1000)).with_start(start).with_duration(seg_duration)
         txt_clips.append(txt)
 
-    cta_start = audio_duration - 2.5
-    cta_txt = make_text_clip("Gostou? Inscreva-se! 🔔", font_size=44, color="#FF4444",
-                              stroke_color="black", stroke_width=3,
-                              duration=2.5)
-    cta_txt = cta_txt.with_position(("center", "center")).with_start(cta_start).with_duration(2.5)
+        highlight = _extract_highlight(sentence)
+        if highlight:
+            hl = _make_highlight_clip(highlight, duration=min(seg_duration, 2.5), start=start)
+            highlight_clips.append(hl)
+
+    txt_clips.extend(highlight_clips)
+
+    cta_start = audio_duration - CTA_DURATION
+    cta_text = random.choice(CTA_TEXTS)
+    cta_txt = make_text_clip(cta_text, font_size=40, color=COR_MARCA,
+                             stroke_color="black", stroke_width=3,
+                             duration=CTA_DURATION)
+    cta_txt = cta_txt.with_position(("center", "center")) \
+        .with_start(cta_start).with_duration(CTA_DURATION)
     txt_clips.append(cta_txt)
 
     final = CompositeVideoClip([video_looped] + txt_clips)
@@ -324,6 +532,26 @@ def get_authenticated_service():
     return build("youtube", "v3", credentials=creds)
 
 
+def post_comment(youtube, video_id: str, text: str):
+    try:
+        youtube.commentThreads().insert(
+            part="snippet",
+            body={
+                "snippet": {
+                    "videoId": video_id,
+                    "topLevelComment": {
+                        "snippet": {"textOriginal": text}
+                    }
+                }
+            }
+        ).execute()
+        print("     [OK] Comentario automatico postado!")
+        return True
+    except Exception as e:
+        print(f"     [AVISO] Nao foi possivel postar comentario ({e})")
+        return False
+
+
 def upload_short(file_path: str, title: str, description: str, tags: list[str] | None = None):
     youtube = get_authenticated_service()
     body = {
@@ -341,6 +569,15 @@ def upload_short(file_path: str, title: str, description: str, tags: list[str] |
     media = MediaFileUpload(file_path, chunksize=-1, resumable=True)
     request = youtube.videos().insert(part="snippet,status", body=body, media_body=media)
     response = request.execute()
+    video_id = response["id"]
+
+    comments = [
+        "Qual fato você quer ver amanhã? Comenta aqui! 👇",
+        "Isso foi loucura! O que você achou? 🔥",
+        "Compartilha com alguém que precisa saber disso! 💬",
+    ]
+    post_comment(youtube, video_id, random.choice(comments))
+
     return response
 
 
@@ -350,14 +587,14 @@ async def main():
     print(f"     Tópico: {topic}")
     print(f"     Fato: {fact[:80]}...")
 
-    title = f"{topic.upper()} 🧠 Curiosidade #{(random.randint(1000, 9999))}"
+    title = f"{topic.upper()} #Shorts"
     tags = ["curiosidades", "vocesabia", "fatos", topic, "conhecimento", "aprender"]
     description = (
         f"{fact}\n\n"
         f"---\n"
-        f"👍 Gostou? Deixa seu like e inscreva-se para mais curiosidades!\n"
-        f"🔔 Ative o sininho para não perder nenhum vídeo\n\n"
-        f"#curiosidades #vocesabia #fatos #{topic} #conhecimento"
+        f"👍 O que você achou desse fato? Comenta abaixo!\n"
+        f"🔔 Inscreva-se para mais curiosidades todos os dias!\n\n"
+        f"#curiosidades #vocesabia #fatos #{topic.replace(' ', '')} #conhecimento #shorts"
     )
 
     print("[2/4] Gerando áudio...")
