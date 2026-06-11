@@ -12,7 +12,6 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
-      secrets: write
     steps:
       - uses: actions/checkout@v4
 
@@ -46,7 +45,7 @@ jobs:
           VIDEO_FONT: "DejaVuSans"
         run: python src/agent.py
 
-      - name: Save used topics e token renovado
+      - name: Save used topics
         if: success()
         env:
           GH_TOKEN: ${{ github.token }}
@@ -57,4 +56,18 @@ jobs:
           git diff --cached --quiet || git commit -m "Update used topics [skip ci]"
           git remote set-url origin https://${GH_TOKEN}@github.com/alexgoulart007/curiosity-shorts-agent.git
           git push
+
+      - name: Persistir token renovado
+        if: success()
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+        run: |
+          if [ -z "$GH_TOKEN" ]; then
+            echo "⚠️ GH_PAT nao configurado - token NAO foi persistido"
+            echo "Para ativar: https://github.com/settings/tokens (crie PAT com repo scope)"
+            echo "Depois adicione em: https://github.com/alexgoulart007/curiosity-shorts-agent/settings/secrets/actions (GH_PAT)"
+            exit 0
+          fi
           gh secret set YOUTUBE_TOKEN --repo ${{ github.repository }} --body "$(cat youtube_token.json)"
+          echo "✅ Token renovado salvo no Secret do GitHub"
