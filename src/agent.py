@@ -411,8 +411,16 @@ def _generate_bg_music(duration: float, output_path: str = "bg_music/generated.m
 
 def fetch_background_music(video_duration: float = 55.0) -> str | None:
     blacklist = load_music_blacklist()
-    available = [(url, url.rsplit("/", 1)[-1]) for url in BG_MUSIC_URLS if url not in blacklist]
 
+    local_music = sorted(BG_MUSIC_DIR.glob("*.mp3"))
+    local_available = [f for f in local_music if f.name not in blacklist]
+    if local_available:
+        chosen = random.choice(local_available)
+        print(f"     Música local: {chosen.name}")
+        CHOSEN_MUSIC_LOG.append(chosen.name)
+        return str(chosen)
+
+    available = [(url, url.rsplit("/", 1)[-1]) for url in BG_MUSIC_URLS if url not in blacklist]
     if available:
         url, name = random.choice(available)
         dest = BG_MUSIC_DIR / name
@@ -431,11 +439,7 @@ def fetch_background_music(video_duration: float = 55.0) -> str | None:
         except Exception as e:
             print(f"     Aviso: falha ao baixar {name} ({e})")
 
-    if blacklist:
-        print(f"     Todas as {len(BG_MUSIC_URLS)} músicas SoundHelix estão na blacklist.")
-        print(f"     Usando música gerada (livre de direitos autorais).")
-    else:
-        print(f"     SoundHelix indisponível, gerando música...")
+    print(f"     Todas as músicas na blacklist. Gerando música livre de direitos autorais...")
     try:
         return _generate_bg_music(video_duration)
     except Exception as e:
