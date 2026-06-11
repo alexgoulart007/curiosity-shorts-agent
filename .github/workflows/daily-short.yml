@@ -52,7 +52,7 @@ jobs:
         run: |
           git config user.name "github-actions"
           git config user.email "github-actions@github.com"
-          git add -f used_topics.json
+          git add -f used_topics.json music_blacklist.json
           git diff --cached --quiet || git commit -m "Update used topics [skip ci]"
           git remote set-url origin https://${GH_TOKEN}@github.com/alexgoulart007/curiosity-shorts-agent.git
           git push

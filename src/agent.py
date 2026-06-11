@@ -85,6 +85,7 @@ OUTPUT_DIR = Path("output")
 OUTPUT_DIR.mkdir(exist_ok=True)
 BG_MUSIC_DIR = Path("bg_music")
 BG_MUSIC_DIR.mkdir(exist_ok=True)
+MUSIC_BLACKLIST_FILE = Path("music_blacklist.json")
 
 VOICES = ["pt-BR-AntonioNeural", "pt-BR-FranciscaNeural"]
 
@@ -99,6 +100,8 @@ BG_MUSIC_URLS = [
     "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-5.mp3",
     "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-6.mp3",
 ]
+
+CHOSEN_MUSIC_LOG: list[str] = []
 
 HOOKS = [
     "Você sabia que {topic} é tão fascinante que",
@@ -382,6 +385,14 @@ def fetch_videos(topic: str, output_dir: Path, num_clips: int = 3) -> list[str]:
     return paths
 
 
+def load_music_blacklist() -> set[str]:
+    if MUSIC_BLACKLIST_FILE.exists():
+        return set(json.loads(MUSIC_BLACKLIST_FILE.read_text()))
+    return set()
+
+def save_music_blacklist(blacklist: set[str]):
+    MUSIC_BLACKLIST_FILE.write_text(json.dumps(sorted(blacklist)))
+
 def _generate_bg_music(duration: float, output_path: str = "bg_music/generated.mp3") -> str:
     Path("bg_music").mkdir(exist_ok=True)
     sr = 44100
@@ -398,9 +409,33 @@ def _generate_bg_music(duration: float, output_path: str = "bg_music/generated.m
     audio_clip.close()
     return output_path
 
-
 def fetch_background_music(video_duration: float = 55.0) -> str | None:
-    print(f"     Gerando música livre de direitos autorais...")
+    blacklist = load_music_blacklist()
+    available = [(url, url.rsplit("/", 1)[-1]) for url in BG_MUSIC_URLS if url not in blacklist]
+
+    if available:
+        url, name = random.choice(available)
+        dest = BG_MUSIC_DIR / name
+        if dest.exists():
+            print(f"     Música: {name}")
+            CHOSEN_MUSIC_LOG.append(name)
+            return str(dest)
+        try:
+            r = requests.get(url, timeout=15)
+            r.raise_for_status()
+            with open(dest, "wb") as f:
+                f.write(r.content)
+            print(f"     Música baixada: {name}")
+            CHOSEN_MUSIC_LOG.append(name)
+            return str(dest)
+        except Exception as e:
+            print(f"     Aviso: falha ao baixar {name} ({e})")
+
+    if blacklist:
+        print(f"     Todas as {len(BG_MUSIC_URLS)} músicas SoundHelix estão na blacklist.")
+        print(f"     Usando música gerada (livre de direitos autorais).")
+    else:
+        print(f"     SoundHelix indisponível, gerando música...")
     try:
         return _generate_bg_music(video_duration)
     except Exception as e:
@@ -649,6 +684,11 @@ async def main():
     result = upload_short(final_path, title, description, tags)
     print(f"     Upload OK! ID: {result['id']}")
     print(f"     Link: https://youtube.com/shorts/{result['id']}")
+
+    if CHOSEN_MUSIC_LOG:
+        print(f"     Música usada: {CHOSEN_MUSIC_LOG[-1]}")
+        print(f"     Se houver claim de direitos autorais, adicione à blacklist:")
+        print(f"     https://github.com/alexgoulart007/curiosity-shorts-agent/edit/main/music_blacklist.json")
 
 
 if __name__ == "__main__":
