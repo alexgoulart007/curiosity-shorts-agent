@@ -45,7 +45,7 @@ jobs:
           VIDEO_FONT: "DejaVuSans"
         run: python src/agent.py
 
-      - name: Save used topics
+      - name: Save used topics e token renovado
         if: success()
         env:
           GH_TOKEN: ${{ github.token }}
@@ -56,3 +56,4 @@ jobs:
           git diff --cached --quiet || git commit -m "Update used topics [skip ci]"
           git remote set-url origin https://${GH_TOKEN}@github.com/alexgoulart007/curiosity-shorts-agent.git
           git push
+          gh secret set YOUTUBE_TOKEN --repo ${{ github.repository }} --body "$(cat youtube_token.json)"

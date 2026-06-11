@@ -382,29 +382,29 @@ def fetch_videos(topic: str, output_dir: Path, num_clips: int = 3) -> list[str]:
     return paths
 
 
-def fetch_background_music() -> str | None:
-    local_music = sorted(BG_MUSIC_DIR.glob("*.mp3"))
-    if local_music:
-        chosen = random.choice(local_music)
-        print(f"     Música local: {chosen.name}")
-        return str(chosen)
+def _generate_bg_music(duration: float, output_path: str = "bg_music/generated.mp3") -> str:
+    Path("bg_music").mkdir(exist_ok=True)
+    sr = 44100
+    t = np.linspace(0, duration, int(sr * duration), endpoint=False)
+    melody = (
+        np.sin(2 * np.pi * 261.63 * t) * 0.15
+        + np.sin(2 * np.pi * 329.63 * t) * 0.10
+        + np.sin(2 * np.pi * 392.00 * t) * 0.08
+    )
+    envelope = np.linspace(0.3, 0.1, len(t))
+    audio = (melody * envelope * 32767).astype(np.int16)
+    audio_clip = AudioArrayClip(audio.reshape(-1, 1), fps=sr)
+    audio_clip.write_audiofile(output_path, logger=None)
+    audio_clip.close()
+    return output_path
 
-    url = random.choice(BG_MUSIC_URLS)
-    name = url.rsplit("/", 1)[-1]
-    dest = BG_MUSIC_DIR / name
-    if dest.exists():
-        print(f"     Música: {name}")
-        return str(dest)
 
+def fetch_background_music(video_duration: float = 55.0) -> str | None:
+    print(f"     Gerando música livre de direitos autorais...")
     try:
-        r = requests.get(url, timeout=15)
-        r.raise_for_status()
-        with open(dest, "wb") as f:
-            f.write(r.content)
-        print(f"     Música baixada: {name}")
-        return str(dest)
+        return _generate_bg_music(video_duration)
     except Exception as e:
-        print(f"     Aviso: não foi possível baixar música ({e})")
+        print(f"     Aviso: não foi possível gerar música ({e})")
         return None
 
 
