@@ -66,6 +66,8 @@ def load_used_topics() -> set[str]:
 def save_used_topics(topics: set[str]):
     USED_TOPICS_FILE.write_text(json.dumps(list(topics)))
 
+_used_topics: set[str] | None = None
+
 TOPICS = [
     "Buraco negro", "Big Bang", "Sistema Solar", "Missão Apollo 11",
     "Estrela", "Exploração espacial",
@@ -159,14 +161,15 @@ def _is_disambig(page) -> bool:
 
 
 def fetch_fact(max_retries: int = 10) -> tuple[str, str]:
+    global _used_topics
     user_agent = "CuriosityShortsAgent/1.0 (github.com/user)"
     api = wikipediaapi.Wikipedia(user_agent, WIKI_LANG)
 
-    used = load_used_topics()
-    available = [t for t in TOPICS if t not in used]
+    if _used_topics is None:
+        _used_topics = load_used_topics()
+    available = [t for t in TOPICS if t not in _used_topics]
     if not available:
-        available = TOPICS[:]
-        used.clear()
+        _used_topics.clear()
 
     random.shuffle(available)
     selected = available[:max_retries]
@@ -195,8 +198,7 @@ def fetch_fact(max_retries: int = 10) -> tuple[str, str]:
         hook_template = random.choice(HOOKS)
         intro = hook_template.format(topic=topic) + "?"
         full_text = f"{intro}\n\n{summary}"
-        used.add(topic)
-        save_used_topics(used)
+        _used_topics.add(topic)
         return topic, full_text
 
     return "curiosidades", "Você sabia que a curiosidade move o mundo? Cada pergunta abre uma porta para um novo conhecimento!"
@@ -305,7 +307,7 @@ def _get_category(topic: str) -> str:
                   "Animal mais rápido do mundo", "Maior vulcão do mundo"}
     science_set = {"DNA", "Cérebro humano", "Sistema imunológico", "Vacina",
                    "Olho humano", "Coração (anatomia)", "Teoria da relatividade",
-                   "Eletricidade", "Fermentação", "Ciclo da água", "Fotossíntese",
+                   "Eletricidade", "Fermentação", "Ciclo da água",
                    "Como funciona o GPS", "Como funciona a internet",
                    "O que causa os sonhos", "Por que bocejamos",
                    "Por que o céu é azul", "Como funcionam os terremotos"}
@@ -399,10 +401,19 @@ def fetch_videos(topic: str, output_dir: Path, num_clips: int = 3) -> list[str]:
                 hd_file = file
                 break
         if not hd_file:
-            hd_file = video_data["video_files"][0]
+            files = video_data.get("video_files", [])
+            if not files:
+                print(f"     Aviso: video {i} sem arquivos, pulando...")
+                continue
+            hd_file = files[0]
 
         path = str(output_dir / f"stock_{i}.mp4")
-        r = requests.get(hd_file["link"], timeout=30)
+        try:
+            r = requests.get(hd_file["link"], timeout=30)
+            r.raise_for_status()
+        except Exception as e:
+            print(f"     Aviso: falha ao baixar video {i} ({e}), pulando...")
+            continue
         with open(path, "wb") as f:
             f.write(r.content)
         paths.append(path)
@@ -446,7 +457,7 @@ def fetch_background_music(video_duration: float = 55.0) -> str | None:
         CHOSEN_MUSIC_LOG.append(chosen.name)
         return str(chosen)
 
-    available = [(url, url.rsplit("/", 1)[-1]) for url in BG_MUSIC_URLS if url not in blacklist]
+    available = [(url, name) for url in BG_MUSIC_URLS if (name := url.rsplit("/", 1)[-1]) not in blacklist]
     if available:
         url, name = random.choice(available)
         dest = BG_MUSIC_DIR / name
@@ -517,7 +528,7 @@ def _make_highlight_clip(highlight: str, font_size: int = 76,
 
 
 def create_short(video_paths: list[str], audio_path: str, text: str, output_path: str,
-                 topic: str, bg_music_path: str | None = None):
+                 topic: str | None = None, bg_music_path: str | None = None):
     audio = AudioFileClip(audio_path)
 
     if bg_music_path:
@@ -568,7 +579,7 @@ def create_short(video_paths: list[str], audio_path: str, text: str, output_path
     COUNTDOWN_DURATION = 1.5
     CTA_DURATION = 2.5
     body_start = HOOK_DURATION + COUNTDOWN_DURATION
-    body_duration = audio_duration - body_start - CTA_DURATION
+    body_duration = max(0, audio_duration - body_start - CTA_DURATION)
     seg_duration = body_duration / max(len(sentences), 1)
 
     txt_clips = []
@@ -628,7 +639,7 @@ def get_authenticated_service():
             creds.refresh(Request())
         else:
             flow = InstalledAppFlow.from_client_secrets_file("client_secret.json", SCOPES)
-            creds = flow.run_local_server(port=8080)
+            creds = flow.run_local_server(port=0)
         with open(YOUTUBE_TOKEN_FILE, "w") as f:
             f.write(creds.to_json())
     return build("youtube", "v3", credentials=creds)
@@ -690,7 +701,7 @@ async def main():
     print(f"     Fato: {fact[:80]}...")
 
     title = f"{topic.upper()} #Shorts"
-    tags = ["curiosidades", "vocesabia", "fatos", topic, "conhecimento", "aprender"]
+    tags = ["curiosidades", "vocesabia", "fatos", topic.replace(" ", ""), "conhecimento", "aprender"]
     description = (
         f"{fact}\n\n"
         f"---\n"
@@ -719,6 +730,9 @@ async def main():
     result = upload_short(final_path, title, description, tags)
     print(f"     Upload OK! ID: {result['id']}")
     print(f"     Link: https://youtube.com/shorts/{result['id']}")
+
+    if _used_topics:
+        save_used_topics(_used_topics)
 
     if CHOSEN_MUSIC_LOG:
         print(f"     Música usada: {CHOSEN_MUSIC_LOG[-1]}")
