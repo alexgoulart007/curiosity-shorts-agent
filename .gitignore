@@ -4,3 +4,4 @@ output/
 .env
 used_topics.json
 bg_music/
+__pycache__/
