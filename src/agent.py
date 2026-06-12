@@ -3,6 +3,7 @@ import json
 import asyncio
 import random
 import re
+import subprocess
 from pathlib import Path
 
 import numpy as np
@@ -29,6 +30,31 @@ from googleapiclient.http import MediaFileUpload
 from dotenv import load_dotenv
 
 load_dotenv()
+
+def _get_ffmpeg() -> str:
+    try:
+        from imageio_ffmpeg import get_ffmpeg_exe
+        return get_ffmpeg_exe()
+    except ImportError:
+        return "ffmpeg"
+
+def _strip_hdr_metadata(video_path: str) -> str:
+    cleaned = video_path.replace(".mp4", "_clean.mp4")
+    if os.path.exists(cleaned):
+        return cleaned
+    ffmpeg = _get_ffmpeg()
+    try:
+        subprocess.run(
+            [ffmpeg, "-i", video_path, "-c", "copy",
+             "-bsf:v", "filter_units=remove_types=6",
+             "-map_metadata", "-1", "-y", cleaned],
+            capture_output=True, timeout=30
+        )
+        if os.path.exists(cleaned) and os.path.getsize(cleaned) > 0:
+            return cleaned
+    except Exception:
+        pass
+    return video_path
 
 USED_TOPICS_FILE = Path("used_topics.json")
 
@@ -353,8 +379,8 @@ def fetch_videos(topic: str, output_dir: Path, num_clips: int = 3) -> list[str]:
             all_videos = good
             print(f"     Pexels: '{q}' -> {len(good)} videos")
             break
-        elif videos:
-            all_videos = videos
+        if videos:
+            all_videos = [v for v in videos if v.get("duration", 0) >= 10]
 
     if not all_videos:
         params = {**base_params, "query": "abstract"}
@@ -513,7 +539,12 @@ def create_short(video_paths: list[str], audio_path: str, text: str, output_path
 
     loaded = []
     for vp in video_paths:
-        clip = VideoFileClip(vp)
+        try:
+            clip = VideoFileClip(vp)
+        except (IOError, OSError):
+            print(f"     Aviso: metadados HDR detectados em {vp}, limpando...")
+            vp_clean = _strip_hdr_metadata(vp)
+            clip = VideoFileClip(vp_clean)
         clip = _apply_zoom(clip)
         loaded.append(clip)
 
