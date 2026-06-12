@@ -368,7 +368,8 @@ def _get_category(topic: str) -> str:
                   "Animal mais rápido do mundo", "Maior vulcão do mundo",
                   "Maior tempestade já registrada", "Cachoeira mais alta do mundo",
                   "Lago mais profundo do mundo", "Rio mais longo do mundo",
-                  "Ornitorrinco", "Açaí", "Café (origem)"}
+                  "Ornitorrinco", "Açaí", "Café (origem)",
+                  "Vulcão", "Terremoto", "Ilha mais remota do mundo"}
     science_set = {"DNA", "Cérebro humano", "Sistema imunológico", "Vacina",
                    "Olho humano", "Coração (anatomia)", "Teoria da relatividade",
                    "Eletricidade", "Fermentação", "Ciclo da água",
@@ -394,7 +395,8 @@ def _get_category(topic: str) -> str:
                    "Invenção do rádio", "Invenção da lâmpada",
                    "Muralha da China", "Machu Picchu", "Stonehenge",
                    "Guerra de Tróia", "Catacumbas de Paris",
-                   "Maior avião do mundo", "Trem mais rápido do mundo"}
+                   "Maior avião do mundo", "Trem mais rápido do mundo",
+                   "Língua mais falada do mundo"}
 
     if topic in space: return "space"
     if topic in ocean: return "ocean"
