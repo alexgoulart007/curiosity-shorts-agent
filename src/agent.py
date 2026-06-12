@@ -103,6 +103,19 @@ TOPICS = [
     "Grandes Navegações", "Brasil Colônia",
     "Inconfidência Mineira", "Independência do Brasil",
     "Origem do Carnaval", "História do Futebol",
+    "Origem do Universo", "Matéria escura",
+    "Buraco de minhoca", "Viagem no tempo",
+    "Clonagem", "CRISPR (edição genética)", "Células-tronco",
+    "Robótica", "Inteligência Artificial", "Realidade virtual",
+    "Primeiro computador", "Invenção do rádio", "Invenção da lâmpada",
+    "Maior avião do mundo", "Trem mais rápido do mundo",
+    "Muralha da China", "Machu Picchu", "Stonehenge",
+    "Guerra de Tróia", "Catacumbas de Paris",
+    "Maior tempestade já registrada", "Cachoeira mais alta do mundo",
+    "Lago mais profundo do mundo", "Rio mais longo do mundo",
+    "Polvo (inteligência)", "Ornitorrinco",
+    "Lula-colossal", "Tubarão-baleia",
+    "Açaí", "Café (origem)",
 ]
 
 WIKI_LANG = "pt"
@@ -141,6 +154,17 @@ HOOKS = [
     "Pare tudo! {topic} é mais incrível do que parece:",
     "Se você acha que sabe sobre {topic}, espera até ouvir isso:",
     "Ninguém te contou a verdade sobre {topic}:",
+    "{topic} — você nunca vai ouvir falar disso na escola:",
+    "Se você gosta de {topic}, isso vai te surpreender:",
+    "O segredo de {topic} que ninguém conta:",
+    "A verdade chocante sobre {topic}:",
+    "Prepare-se: {topic} não é o que você pensa:",
+    "1 minuto sobre {topic} que vai mudar sua visão:",
+    "Você subestima {topic} — veja por quê:",
+    "A história de {topic} que você precisa conhecer:",
+    "{topic}: o que a ciência diz vai te surpreender:",
+    "Se você pudesse aprender algo sobre {topic} hoje, seria isso:",
+    "O lado de {topic} que ninguém mostra:",
 ]
 
 CTA_TEXTS = [
@@ -149,6 +173,11 @@ CTA_TEXTS = [
     "👇 Essa curiosidade chocou geral. Inscreva-se!",
     "⚡ Fato aprovado por 9 em cada 10 inscritos! E você?",
     "🎯 Compartilha com alguém que precisa saber disso!",
+    "👀 2.847 pessoas assistindo agora. Já se inscreveu?",
+    "📢 Isso viralizou lá fora. O que você achou?",
+    "💡 Fato novo todo dia às 9h. Ative o sininho!",
+    "🚀 Esse conhecimento mudou minha vida. E a sua?",
+    "🎬 Melhor curiosidade que você vai ver hoje!",
 ]
 
 
@@ -283,6 +312,36 @@ TOPIC_QUERIES: dict[str, list[str]] = {
     "Independência do Brasil": ["brazil independence", "brazil flag", "historic monument"],
     "Origem do Carnaval": ["carnival parade", "brazil carnival", "festival dance"],
     "História do Futebol": ["soccer football", "stadium crowd", "football game"],
+    "Origem do Universo": ["universe big bang", "cosmic space", "stars galaxy"],
+    "Matéria escura": ["dark matter space", "cosmic particles", "universe science"],
+    "Buraco de minhoca": ["wormhole space", "time travel", "cosmic tunnel"],
+    "Viagem no tempo": ["time travel concept", "clock science", "future technology"],
+    "Clonagem": ["cloning science", "dna laboratory", "genetic research"],
+    "CRISPR (edição genética)": ["gene editing dna", "scientist laboratory", "microscope research"],
+    "Células-tronco": ["stem cells", "biological cells", "medical research"],
+    "Robótica": ["robot technology", "artificial intelligence robot", "future tech"],
+    "Inteligência Artificial": ["artificial intelligence", "ai robot", "neural network"],
+    "Realidade virtual": ["virtual reality headset", "vr technology", "digital world"],
+    "Primeiro computador": ["vintage computer", "old computer history", "retro technology"],
+    "Invenção do rádio": ["vintage radio", "old radio antenna", "communication history"],
+    "Invenção da lâmpada": ["vintage light bulb", "edison lamp", "old lighting"],
+    "Maior avião do mundo": ["huge airplane", "massive aircraft", "jumbo jet"],
+    "Trem mais rápido do mundo": ["high speed train", "bullet train", "modern railway"],
+    "Muralha da China": ["great wall china", "chinese wall", "ancient china"],
+    "Machu Picchu": ["machu picchu ruins", "andean mountains", "inca ruins"],
+    "Stonehenge": ["stonehenge monument", "ancient stones", "megalithic"],
+    "Guerra de Tróia": ["trojan horse", "ancient greek ruins", "epic battle"],
+    "Catacumbas de Paris": ["catacombs paris", "underground tunnels", "skulls bones"],
+    "Maior tempestade já registrada": ["huge storm clouds", "hurricane from space", "extreme weather"],
+    "Cachoeira mais alta do mundo": ["tall waterfall", "angel falls", "mountain waterfall"],
+    "Lago mais profundo do mundo": ["deep lake baikal", "frozen lake", "clear blue lake"],
+    "Rio mais longo do mundo": ["amazon river", "nile river", "long river aerial"],
+    "Polvo (inteligência)": ["octopus underwater", "octopus camouflage", "ocean creature"],
+    "Ornitorrinco": ["platypus swimming", "platypus wildlife", "australian animal"],
+    "Lula-colossal": ["giant squid deep sea", "colossal squid", "deep ocean creature"],
+    "Tubarão-baleia": ["whale shark ocean", "giant shark underwater", "sea giant"],
+    "Açaí": ["acai berry", "acai bowl", "amazon fruit"],
+    "Café (origem)": ["coffee beans", "coffee plantation", "coffee farm"],
 }
 
 CATEGORY_FALLBACKS = {
@@ -298,19 +357,27 @@ CATEGORY_FALLBACKS = {
 
 def _get_category(topic: str) -> str:
     space = {"Buraco negro", "Big Bang", "Sistema Solar", "Missão Apollo 11",
-             "Estrela", "Exploração espacial", "Aurora polar"}
+             "Estrela", "Exploração espacial", "Aurora polar",
+             "Origem do Universo", "Matéria escura", "Buraco de minhoca"}
     ocean = {"Baleia-azul", "Recifes de coral", "Fundo oceânico", "Fossa das Marianas",
-             "Animais bioluminescentes", "Tsunami"}
+             "Animais bioluminescentes", "Tsunami",
+             "Polvo (inteligência)", "Lula-colossal", "Tubarão-baleia"}
     nature_set = {"Fotossíntese", "Amazônia", "Maior deserto do mundo", "Plantas carnívoras",
                   "Cogumelos alucinógenos", "Abelha", "Camuflagem dos animais",
                   "Hibernação", "Migração dos animais", "Animais em extinção",
-                  "Animal mais rápido do mundo", "Maior vulcão do mundo"}
+                  "Animal mais rápido do mundo", "Maior vulcão do mundo",
+                  "Maior tempestade já registrada", "Cachoeira mais alta do mundo",
+                  "Lago mais profundo do mundo", "Rio mais longo do mundo",
+                  "Ornitorrinco", "Açaí", "Café (origem)"}
     science_set = {"DNA", "Cérebro humano", "Sistema imunológico", "Vacina",
                    "Olho humano", "Coração (anatomia)", "Teoria da relatividade",
                    "Eletricidade", "Fermentação", "Ciclo da água",
                    "Como funciona o GPS", "Como funciona a internet",
                    "O que causa os sonhos", "Por que bocejamos",
-                   "Por que o céu é azul", "Como funcionam os terremotos"}
+                   "Por que o céu é azul", "Como funcionam os terremotos",
+                   "Viagem no tempo", "Clonagem", "CRISPR (edição genética)",
+                   "Células-tronco", "Robótica", "Inteligência Artificial",
+                   "Realidade virtual", "Primeiro computador"}
     history_set = {"Império Romano", "Civilização Maia", "Antigo Egito",
                    "Pirâmides de Gizé", "Múmia", "Descobrimento do Brasil",
                    "Invenção do telefone", "História da internet",
@@ -323,7 +390,11 @@ def _get_category(topic: str) -> str:
                    "Brasil Colônia", "Inconfidência Mineira",
                    "Independência do Brasil", "Origem do Carnaval",
                    "História do Futebol", "Evolução humana",
-                   "Extinção dos dinossauros"}
+                   "Extinção dos dinossauros",
+                   "Invenção do rádio", "Invenção da lâmpada",
+                   "Muralha da China", "Machu Picchu", "Stonehenge",
+                   "Guerra de Tróia", "Catacumbas de Paris",
+                   "Maior avião do mundo", "Trem mais rápido do mundo"}
 
     if topic in space: return "space"
     if topic in ocean: return "ocean"
@@ -365,7 +436,7 @@ def _apply_zoom(clip, zoom_max: float = 1.12):
 
 def fetch_videos(topic: str, output_dir: Path, num_clips: int = 3) -> list[str]:
     headers = {"Authorization": PEXELS_API_KEY}
-    base_params = {"per_page": num_clips * 3, "orientation": "portrait", "min_duration": 10}
+    base_params = {"per_page": 15, "orientation": "portrait", "min_duration": 10}
 
     queries = TOPIC_QUERIES.get(topic, [topic])
 
