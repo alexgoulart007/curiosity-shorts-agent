@@ -5,6 +5,7 @@ import random
 import re
 import subprocess
 from pathlib import Path
+from typing import Optional
 
 import numpy as np
 from PIL import Image
@@ -636,8 +637,51 @@ def _make_highlight_clip(highlight: str, font_size: int = 76,
     return txt.with_position(("center", 320)).with_start(start).with_duration(duration)
 
 
+def _srt_time(seconds: float) -> str:
+    h = int(seconds // 3600)
+    m = int((seconds % 3600) // 60)
+    s = int(seconds % 60)
+    ms = int((seconds - int(seconds)) * 1000)
+    return f"{h:02d}:{m:02d}:{s:02d},{ms:03d}"
+
+def generate_srt(sentences: list[str], body_start: float, seg_duration: float) -> str:
+    lines = []
+    for i, sentence in enumerate(sentences):
+        sentence = sentence.strip()
+        if not sentence:
+            continue
+        start = body_start + (i * seg_duration)
+        end = start + seg_duration
+        lines.append(f"{_srt_time(start)} --> {_srt_time(end)}")
+        lines.append(sentence)
+        lines.append("")
+    header = "1\n"
+    content = "\n".join(lines)
+    return header + content
+
+def upload_caption(youtube, video_id: str, srt_path: str):
+    try:
+        media = MediaFileUpload(srt_path, mimetype="text/plain", resumable=False)
+        youtube.captions().insert(
+            part="snippet",
+            body={
+                "snippet": {
+                    "videoId": video_id,
+                    "language": "pt",
+                    "name": "Português",
+                }
+            },
+            media_body=media,
+        ).execute()
+        print("     [OK] Legenda SRT enviada!")
+        return True
+    except Exception as e:
+        print(f"     [AVISO] Nao foi possivel enviar legenda: {e}")
+        return False
+
+
 def create_short(video_paths: list[str], audio_path: str, text: str, output_path: str,
-                 topic: str | None = None, bg_music_path: str | None = None):
+                 topic: str | None = None, bg_music_path: str | None = None) -> Optional[str]:
     audio = AudioFileClip(audio_path)
 
     if bg_music_path:
@@ -713,11 +757,7 @@ def create_short(video_paths: list[str], audio_path: str, text: str, output_path
         sentence = sentence.strip()
         if not sentence:
             continue
-        txt = make_text_clip(sentence, font_size=50, duration=seg_duration)
         start = body_start + (i * seg_duration)
-        txt = txt.with_position(("center", 1000)).with_start(start).with_duration(seg_duration)
-        txt_clips.append(txt)
-
         highlight = _extract_highlight(sentence)
         if highlight:
             hl = _make_highlight_clip(highlight, duration=min(seg_duration, 2.5), start=start)
@@ -739,6 +779,12 @@ def create_short(video_paths: list[str], audio_path: str, text: str, output_path
     final.close()
     video_comp.close()
     audio.close()
+
+    srt_path = output_path.replace(".mp4", ".srt")
+    srt_content = generate_srt(sentences, body_start, seg_duration)
+    Path(srt_path).write_text(srt_content, encoding="utf-8")
+    print(f"     Legenda SRT gerada: {srt_path}")
+    return srt_path
 
 
 def get_authenticated_service():
@@ -835,8 +881,9 @@ async def main():
     bg_music = fetch_background_music()
 
     final_path = str(OUTPUT_DIR / "final.mp4")
+    srt_path = None
     try:
-        create_short(video_paths, audio_path, fact, final_path, topic, bg_music)
+        srt_path = create_short(video_paths, audio_path, fact, final_path, topic, bg_music)
     except Exception as e:
         print(f"     ERRO ao criar video: {e}")
         return
@@ -847,8 +894,14 @@ async def main():
 
     print("[4/4] Fazendo upload para o YouTube...")
     result = upload_short(final_path, title, description, tags)
-    print(f"     Upload OK! ID: {result['id']}")
-    print(f"     Link: https://youtube.com/shorts/{result['id']}")
+    video_id = result["id"]
+    print(f"     Upload OK! ID: {video_id}")
+    print(f"     Link: https://youtube.com/shorts/{video_id}")
+
+    if srt_path and os.path.exists(srt_path):
+        print("     Enviando legenda SRT...")
+        youtube = get_authenticated_service()
+        upload_caption(youtube, video_id, srt_path)
 
     if _used_topics:
         save_used_topics(_used_topics)

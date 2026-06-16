@@ -220,6 +220,20 @@ Bot automatizado que gera e publica Shorts no YouTube com fatos curiosos em port
 - **Solução:** `music_blacklist.json`: adicionado `"SoundHelix-Song-8.mp3"` à blacklist
 - **Arquivos alterados:** `music_blacklist.json`
 
+### 2026-06-16 — Legendas SRT implementadas de fato + Voz aleatória no GitHub Actions
+- **Problema:** Texto do corpo queimado no vídeo (TextClip) aparecia no meio da tela, cobrindo o conteúdo. MEMORIA.md dizia que SRT estava implementado, mas o código nunca foi commitado.
+- **Solução:**
+  - `_srt_time()` — converte segundos para formato SRT (`HH:MM:SS,mmm`)
+  - `generate_srt()` — gera arquivo `.srt` com timestamps sincronizados com o áudio
+  - `upload_caption()` — envia legenda para o YouTube via `captions().insert()` (API)
+  - `create_short()` — **removeu TextClips do corpo**; hook, countdown, destaques numéricos e CTA continuam como elementos visuais; retorna o caminho do `.srt`
+  - `main()` — após upload do vídeo, chama `upload_caption()` com o SRT gerado
+  - Workflow: `TTS_VOICE` removido — agora a voz alterna aleatoriamente entre Antonio e Francisca também no GitHub Actions
+- **Resultado:** Espectador pode ligar/desligar legendas. Vídeo limpo, sem texto queimado no meio da tela.
+- **Arquivos alterados:**
+  - `src/agent.py`: novas funções `_srt_time()`, `generate_srt()`, `upload_caption()`; `create_short()` modificada; `main()` com envio de SRT
+  - `.github/workflows/daily-short.yml`: `TTS_VOICE` removido (voz agora alterna aleatoriamente)
+
 ---
 - YouTube Data API: **10.000 unidades/dia** (~6 uploads)
 - GitHub Actions: **2000 minutos/mês** (cada execução leva ~1 min)

@@ -40,7 +40,6 @@ jobs:
       - name: Run agent
         env:
           PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
-          TTS_VOICE: "pt-BR-AntonioNeural"
           VIDEO_PRIVACY: "public"
           VIDEO_FONT: "DejaVuSans"
         run: python src/agent.py
