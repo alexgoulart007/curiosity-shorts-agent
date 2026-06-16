@@ -215,9 +215,12 @@ Bot automatizado que gera e publica Shorts no YouTube com fatos curiosos em port
   - `music_blacklist.json`: entrada Song-4 adicionada
   - `src/agent.py`: `BG_MUSIC_URLS` gerado dinamicamente com `range(1, 18)`
 
----
+### 2026-06-16 — Blacklist SoundHelix Song-8
+- **Problema:** Vídeo "EXTINÇÃO DOS DINOSSAUROS" com claim de direitos autorais por causa de `SoundHelix-Song-8.mp3`
+- **Solução:** `music_blacklist.json`: adicionado `"SoundHelix-Song-8.mp3"` à blacklist
+- **Arquivos alterados:** `music_blacklist.json`
 
-## Limites da API gratuita
+---
 - YouTube Data API: **10.000 unidades/dia** (~6 uploads)
 - GitHub Actions: **2000 minutos/mês** (cada execução leva ~1 min)
 - Pexels: **15.000 requisições/mês** (plano grátis)
