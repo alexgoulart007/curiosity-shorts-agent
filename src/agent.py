@@ -170,12 +170,8 @@ COR_MARCA = "#FF6B00"
 BG_MUSIC_VOLUME = 0.25
 
 BG_MUSIC_URLS = [
-    "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3",
-    "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-2.mp3",
-    "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-3.mp3",
-    "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-4.mp3",
-    "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-5.mp3",
-    "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-6.mp3",
+    f"https://www.soundhelix.com/examples/mp3/SoundHelix-Song-{i}.mp3"
+    for i in range(1, 18)  # Songs 1-17 available, 18+ do not exist
 ]
 
 CHOSEN_MUSIC_LOG: list[str] = []
