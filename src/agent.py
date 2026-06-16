@@ -38,22 +38,58 @@ def _get_ffmpeg() -> str:
     except ImportError:
         return "ffmpeg"
 
-def _strip_hdr_metadata(video_path: str) -> str:
+def _has_hdr(video_path: str) -> bool:
+    """Detecta HDR via ffprobe ou inspecao do stderr do ffmpeg."""
+    ffmpeg = _get_ffmpeg()
+    probe = ffmpeg.replace("ffmpeg.exe", "ffprobe.exe").replace("ffmpeg", "ffprobe")
+    if probe == ffmpeg:
+        probe = "ffprobe"
+    try:
+        r = subprocess.run(
+            [probe, "-v", "error", "-select_streams", "v:0",
+             "-show_entries", "stream=color_transfer",
+             "-of", "default=noprint_wrappers=1:nokey=1", video_path],
+            capture_output=True, text=True, timeout=15
+        )
+        ct = r.stdout.strip()
+        if ct in ("smpte2084", "arib-std-b67", "smpte428", "bt2020-10"):
+            return True
+        r2 = subprocess.run(
+            [ffmpeg, "-i", video_path, "-f", "null", "-"],
+            capture_output=True, text=True, timeout=15
+        )
+        stderr = r2.stderr
+        if "Mastering Display Metadata" in stderr or "Content Light Level" in stderr:
+            return True
+    except Exception:
+        pass
+    return False
+
+
+def _convert_hdr_to_sdr(video_path: str) -> str:
+    """Se o video for HDR, transcodifica para SDR com tonemapping. Senao retorna original."""
+    if not _has_hdr(video_path):
+        return video_path
     cleaned = video_path.replace(".mp4", "_clean.mp4")
     if os.path.exists(cleaned):
         return cleaned
     ffmpeg = _get_ffmpeg()
+    print(f"     HDR detectado em {video_path}, convertendo para SDR...")
     try:
         subprocess.run(
-            [ffmpeg, "-i", video_path, "-c", "copy",
-             "-bsf:v", "filter_units=remove_types=6",
+            [ffmpeg, "-i", video_path,
+             "-vf", "tonemap=hable:desat=0",
+             "-c:v", "libx264", "-preset", "fast", "-crf", "22",
+             "-pix_fmt", "yuv420p",
+             "-c:a", "aac", "-b:a", "128k",
              "-map_metadata", "-1", "-y", cleaned],
-            capture_output=True, timeout=30
+            capture_output=True, timeout=120
         )
         if os.path.exists(cleaned) and os.path.getsize(cleaned) > 0:
+            print(f"     Conversao HDR->SDR OK: {cleaned}")
             return cleaned
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"     Aviso: falha na conversao HDR ({e})")
     return video_path
 
 USED_TOPICS_FILE = Path("used_topics.json")
@@ -413,7 +449,11 @@ def _search_pexels(headers: dict, params: dict) -> list:
         resp.raise_for_status()
         data = resp.json()
         return data.get("videos", [])
-    except Exception:
+    except requests.exceptions.RequestException as e:
+        print(f"     [Pexels] Erro HTTP: {e}")
+        return []
+    except json.JSONDecodeError as e:
+        print(f"     [Pexels] Erro ao decodificar resposta: {e}")
         return []
 
 
@@ -624,13 +664,15 @@ def create_short(video_paths: list[str], audio_path: str, text: str, output_path
     loaded = []
     for vp in video_paths:
         try:
-            clip = VideoFileClip(vp)
-        except (IOError, OSError):
-            print(f"     Aviso: metadados HDR detectados em {vp}, limpando...")
-            vp_clean = _strip_hdr_metadata(vp)
-            clip = VideoFileClip(vp_clean)
-        clip = _apply_zoom(clip)
-        loaded.append(clip)
+            vp_prepared = _convert_hdr_to_sdr(vp)
+            clip = VideoFileClip(vp_prepared)
+            clip = _apply_zoom(clip)
+            loaded.append(clip)
+        except Exception as e:
+            print(f"     Aviso: falha ao carregar {vp} ({e}), pulando clipe...")
+
+    if not loaded:
+        raise RuntimeError("Nenhum clipe de video pode ser carregado")
 
     video_comp = concatenate_videoclips(loaded)
 
@@ -797,7 +839,15 @@ async def main():
     bg_music = fetch_background_music()
 
     final_path = str(OUTPUT_DIR / "final.mp4")
-    create_short(video_paths, audio_path, fact, final_path, topic, bg_music)
+    try:
+        create_short(video_paths, audio_path, fact, final_path, topic, bg_music)
+    except Exception as e:
+        print(f"     ERRO ao criar video: {e}")
+        return
+
+    if not os.path.exists(final_path) or os.path.getsize(final_path) == 0:
+        print("     ERRO: arquivo de video nao foi criado ou esta vazio")
+        return
 
     print("[4/4] Fazendo upload para o YouTube...")
     result = upload_short(final_path, title, description, tags)
