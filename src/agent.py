@@ -4,14 +4,14 @@ import asyncio
 import random
 import re
 import subprocess
+import io
 from pathlib import Path
-from typing import Optional
 
 import numpy as np
 from PIL import Image
 import requests
 import wikipediaapi
-from edge_tts import Communicate
+from edge_tts import Communicate, SubMaker
 from moviepy import (
     VideoFileClip,
     AudioFileClip,
@@ -157,6 +157,7 @@ TOPICS = [
 
 WIKI_LANG = "pt"
 PEXELS_API_KEY = os.getenv("PEXELS_API_KEY")
+PIXABAY_API_KEY = os.getenv("PIXABAY_API_KEY")
 SCOPES = ["https://www.googleapis.com/auth/youtube.upload", "https://www.googleapis.com/auth/youtube.force-ssl"]
 YOUTUBE_TOKEN_FILE = "youtube_token.json"
 OUTPUT_DIR = Path("output")
@@ -171,8 +172,12 @@ COR_MARCA = "#FF6B00"
 BG_MUSIC_VOLUME = 0.25
 
 BG_MUSIC_URLS = [
-    f"https://www.soundhelix.com/examples/mp3/SoundHelix-Song-{i}.mp3"
-    for i in range(1, 18)  # Songs 1-17 available, 18+ do not exist
+    "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3",
+    "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-2.mp3",
+    "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-3.mp3",
+    "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-4.mp3",
+    "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-5.mp3",
+    "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-6.mp3",
 ]
 
 CHOSEN_MUSIC_LOG: list[str] = []
@@ -454,6 +459,40 @@ def _search_pexels(headers: dict, params: dict) -> list:
         return []
 
 
+def _search_pixabay(params: dict) -> list:
+    if not PIXABAY_API_KEY:
+        return []
+    try:
+        p = {**params, "key": PIXABAY_API_KEY}
+        resp = requests.get("https://pixabay.com/api/videos/",
+                            params=p, timeout=15)
+        resp.raise_for_status()
+        data = resp.json()
+        hits = data.get("hits", [])
+        good = []
+        for hit in hits:
+            duration = hit.get("duration", 0)
+            if duration < 10:
+                continue
+            videos = hit.get("videos", {})
+            selected_url = None
+            for quality in ("large", "medium", "small", "tiny"):
+                kval = videos.get(quality, {})
+                if kval and kval.get("width", 0) >= 720:
+                    selected_url = kval["url"]
+                    break
+            if selected_url:
+                good.append({"url": selected_url, "duration": duration})
+        print(f"     [Pixabay] '{p.get('q', '')}' -> {len(good)} videos")
+        return good
+    except requests.exceptions.RequestException as e:
+        print(f"     [Pixabay] Erro HTTP: {e}")
+        return []
+    except json.JSONDecodeError as e:
+        print(f"     [Pixabay] Erro ao decodificar resposta: {e}")
+        return []
+
+
 def _apply_zoom(clip, zoom_max: float = 1.12):
     """Aplica zoom lento e progressivo de 1.0 ate zoom_max."""
     duration = clip.duration
@@ -473,62 +512,107 @@ def _apply_zoom(clip, zoom_max: float = 1.12):
     return clip.transform(make_frame)
 
 
+def _pexels_download(video_data: dict, output_dir: Path, i: int) -> str | None:
+    hd_file = None
+    for file in video_data.get("video_files", []):
+        if file.get("quality") in ("hd", "sd") and file.get("width", 0) >= 720:
+            hd_file = file
+            break
+    if not hd_file:
+        files = video_data.get("video_files", [])
+        if not files:
+            print(f"     Aviso: video {i} sem arquivos, pulando...")
+            return None
+        hd_file = files[0]
+    path = str(output_dir / f"stock_{i}.mp4")
+    try:
+        r = requests.get(hd_file["link"], timeout=30)
+        r.raise_for_status()
+    except Exception as e:
+        print(f"     Aviso: falha ao baixar video {i} ({e}), pulando...")
+        return None
+    with open(path, "wb") as f:
+        f.write(r.content)
+    return path
+
+
+def _pixabay_download(hit: dict, output_dir: Path, i: int) -> str | None:
+    url = hit.get("url", "")
+    if not url:
+        return None
+    path = str(output_dir / f"stock_{i}.mp4")
+    try:
+        r = requests.get(url, timeout=30)
+        r.raise_for_status()
+    except Exception as e:
+        print(f"     Aviso: falha ao baixar video Pixabay {i} ({e}), pulando...")
+        return None
+    with open(path, "wb") as f:
+        f.write(r.content)
+    return path
+
+
 def fetch_videos(topic: str, output_dir: Path, num_clips: int = 3) -> list[str]:
     headers = {"Authorization": PEXELS_API_KEY}
     base_params = {"per_page": 15, "orientation": "portrait", "min_duration": 10}
 
     queries = TOPIC_QUERIES.get(topic, [topic])
-
     category = _get_category(topic)
     fallbacks = CATEGORY_FALLBACKS.get(category, ["abstract"])
 
-    all_videos = []
+    # -- Tenta Pexels primeiro --
+    pexels_videos = []
     for q in queries + fallbacks:
         params = {**base_params, "query": q}
         videos = _search_pexels(headers, params)
         good = [v for v in videos if v.get("duration", 0) >= 10 and v.get("width", 0) >= 720]
         if good:
-            all_videos = good
+            pexels_videos = good
             print(f"     Pexels: '{q}' -> {len(good)} videos")
             break
         if videos:
-            all_videos = [v for v in videos if v.get("duration", 0) >= 10]
+            pexels_videos = [v for v in videos if v.get("duration", 0) >= 10]
 
-    if not all_videos:
+    if not pexels_videos:
         params = {**base_params, "query": "abstract"}
-        all_videos = _search_pexels(headers, params)
-    if not all_videos:
-        print("     Aviso: nenhum video encontrado no Pexels")
+        pexels_videos = _search_pexels(headers, params)
+
+    # -- Fallback: Pixabay se Pexels falhou --
+    pixabay_hits = []
+    if not pexels_videos:
+        print("     Pexels sem resultados, tentando Pixabay...")
+        p_params = {"per_page": 15, "orientation": "vertical"}
+        for q in queries + fallbacks:
+            pp = {**p_params, "q": q}
+            hits = _search_pixabay(pp)
+            if hits:
+                pixabay_hits = hits
+                break
+        if not pixabay_hits:
+            pp = {**p_params, "q": "abstract"}
+            pixabay_hits = _search_pixabay(pp)
+
+    if not pexels_videos and not pixabay_hits:
+        print("     Aviso: nenhum video encontrado (Pexels nem Pixabay)")
         return []
 
-    random.shuffle(all_videos)
-    selected = all_videos[:num_clips]
     paths = []
-    for i, video_data in enumerate(selected):
-        hd_file = None
-        for file in video_data.get("video_files", []):
-            if file.get("quality") in ("hd", "sd") and file.get("width", 0) >= 720:
-                hd_file = file
-                break
-        if not hd_file:
-            files = video_data.get("video_files", [])
-            if not files:
-                print(f"     Aviso: video {i} sem arquivos, pulando...")
-                continue
-            hd_file = files[0]
+    if pexels_videos:
+        random.shuffle(pexels_videos)
+        for i, video_data in enumerate(pexels_videos[:num_clips]):
+            p = _pexels_download(video_data, output_dir, i)
+            if p:
+                paths.append(p)
+        print(f"     Baixados {len(paths)} clipes do Pexels")
 
-        path = str(output_dir / f"stock_{i}.mp4")
-        try:
-            r = requests.get(hd_file["link"], timeout=30)
-            r.raise_for_status()
-        except Exception as e:
-            print(f"     Aviso: falha ao baixar video {i} ({e}), pulando...")
-            continue
-        with open(path, "wb") as f:
-            f.write(r.content)
-        paths.append(path)
+    if not paths and pixabay_hits:
+        random.shuffle(pixabay_hits)
+        for i, hit in enumerate(pixabay_hits[:num_clips]):
+            p = _pixabay_download(hit, output_dir, i)
+            if p:
+                paths.append(p)
+        print(f"     Baixados {len(paths)} clipes do Pixabay (fallback)")
 
-    print(f"     Baixados {len(paths)} clipes do Pexels")
     return paths
 
 
@@ -594,11 +678,22 @@ def fetch_background_music(video_duration: float = 55.0) -> str | None:
         return None
 
 
-async def generate_audio(text: str, output_path: str):
+async def generate_audio(text: str, output_path: str) -> SubMaker:
     voice = os.getenv("TTS_VOICE", random.choice(VOICES))
     print(f"     Voz: {voice}")
     communicate = Communicate(text, voice)
-    await communicate.save(output_path)
+    submaker = SubMaker()
+    with io.BytesIO() as audio_file:
+        async for chunk in communicate.stream():
+            if chunk["type"] == "audio":
+                audio_file.write(chunk["data"])
+            elif chunk["type"] == "WordBoundary":
+                submaker.feed(chunk)
+        audio_file.seek(0)
+        with open(output_path, "wb") as f:
+            f.write(audio_file.read())
+    print(f"     {len(submaker.cues)} palavras com timing capturado")
+    return submaker
 
 
 def make_text_clip(text: str, font_size: int, color: str = "white",
@@ -644,44 +739,28 @@ def _srt_time(seconds: float) -> str:
     ms = int((seconds - int(seconds)) * 1000)
     return f"{h:02d}:{m:02d}:{s:02d},{ms:03d}"
 
-def generate_srt(sentences: list[str], body_start: float, seg_duration: float) -> str:
+def generate_srt_body(submaker: SubMaker, hook_word_count: int, body_start: float, srt_path: str):
+    cues = submaker.cues
+    if len(cues) <= hook_word_count:
+        return
+    body_cues = cues[hook_word_count:]
+    first_start = body_cues[0].start.total_seconds()
+    offset = body_start - first_start
     lines = []
-    for i, sentence in enumerate(sentences):
-        sentence = sentence.strip()
-        if not sentence:
-            continue
-        start = body_start + (i * seg_duration)
-        end = start + seg_duration
+    for i, cue in enumerate(body_cues):
+        start = cue.start.total_seconds() + offset
+        end = cue.end.total_seconds() + offset
+        lines.append(str(i + 1))
         lines.append(f"{_srt_time(start)} --> {_srt_time(end)}")
-        lines.append(sentence)
+        lines.append(cue.content)
         lines.append("")
-    header = "1\n"
-    content = "\n".join(lines)
-    return header + content
-
-def upload_caption(youtube, video_id: str, srt_path: str):
-    try:
-        media = MediaFileUpload(srt_path, mimetype="text/plain", resumable=False)
-        youtube.captions().insert(
-            part="snippet",
-            body={
-                "snippet": {
-                    "videoId": video_id,
-                    "language": "pt",
-                    "name": "Português",
-                }
-            },
-            media_body=media,
-        ).execute()
-        print("     [OK] Legenda SRT enviada!")
-        return True
-    except Exception as e:
-        print(f"     [AVISO] Nao foi possivel enviar legenda: {e}")
-        return False
+    Path(srt_path).write_text("\n".join(lines), encoding="utf-8")
+    print(f"     SRT word-level gerado: {srt_path} ({len(body_cues)} palavras)")
 
 
 def create_short(video_paths: list[str], audio_path: str, text: str, output_path: str,
-                 topic: str | None = None, bg_music_path: str | None = None) -> Optional[str]:
+                 topic: str | None = None, bg_music_path: str | None = None,
+                 srt_path: str | None = None, submaker: SubMaker | None = None):
     audio = AudioFileClip(audio_path)
 
     if bg_music_path:
@@ -758,12 +837,17 @@ def create_short(video_paths: list[str], audio_path: str, text: str, output_path
         if not sentence:
             continue
         start = body_start + (i * seg_duration)
+
         highlight = _extract_highlight(sentence)
         if highlight:
             hl = _make_highlight_clip(highlight, duration=min(seg_duration, 2.5), start=start)
             highlight_clips.append(hl)
 
     txt_clips.extend(highlight_clips)
+
+    if srt_path and submaker:
+        hook_words = len(hook_text.split())
+        generate_srt_body(submaker, hook_words, body_start, srt_path)
 
     cta_start = audio_duration - CTA_DURATION
     cta_text = random.choice(CTA_TEXTS)
@@ -779,12 +863,6 @@ def create_short(video_paths: list[str], audio_path: str, text: str, output_path
     final.close()
     video_comp.close()
     audio.close()
-
-    srt_path = output_path.replace(".mp4", ".srt")
-    srt_content = generate_srt(sentences, body_start, seg_duration)
-    Path(srt_path).write_text(srt_content, encoding="utf-8")
-    print(f"     Legenda SRT gerada: {srt_path}")
-    return srt_path
 
 
 def get_authenticated_service():
@@ -822,7 +900,26 @@ def post_comment(youtube, video_id: str, text: str):
         return False
 
 
-def upload_short(file_path: str, title: str, description: str, tags: list[str] | None = None):
+def upload_caption(youtube, video_id: str, srt_path: str, language: str = "pt"):
+    try:
+        body = {
+            "snippet": {
+                "videoId": video_id,
+                "language": language,
+                "name": "Português",
+            }
+        }
+        media = MediaFileUpload(srt_path, mimetype="application/octet-stream", resumable=False)
+        youtube.captions().insert(part="snippet", body=body, media_body=media).execute()
+        print(f"     [OK] Legendas SRT enviadas (legendas ocultas)")
+        return True
+    except Exception as e:
+        print(f"     [AVISO] Nao foi possivel enviar legendas ({e})")
+        return False
+
+
+def upload_short(file_path: str, title: str, description: str, tags: list[str] | None = None,
+                 srt_path: str | None = None):
     youtube = get_authenticated_service()
     body = {
         "snippet": {
@@ -841,6 +938,9 @@ def upload_short(file_path: str, title: str, description: str, tags: list[str] |
     response = request.execute()
     video_id = response["id"]
 
+    if srt_path:
+        upload_caption(youtube, video_id, srt_path)
+
     comments = [
         "Qual fato você quer ver amanhã? Comenta aqui! 👇",
         "Isso foi loucura! O que você achou? 🔥",
@@ -851,11 +951,53 @@ def upload_short(file_path: str, title: str, description: str, tags: list[str] |
     return response
 
 
+def refine_script(topic: str, raw_text: str) -> str:
+    key = os.getenv("DEEPSEEK_API_KEY")
+    if not key:
+        return raw_text
+    prompt = (
+        "Reescreva o texto abaixo como um roteiro para YouTube Shorts "
+        f"sobre '{topic}'. Regras:\n"
+        "1. Use APENAS as informações do texto original\n"
+        "2. NÃO invente fatos, números, datas ou nomes\n"
+        "3. Mantenha todos os dados exatamente como estão\n"
+        "4. Use linguagem simples e direta\n"
+        "5. Máximo de 150 palavras\n\n"
+        f"Texto:\n{raw_text}"
+    )
+    try:
+        resp = requests.post(
+            "https://integrate.api.nvidia.com/v1/chat/completions",
+            headers={
+                "Authorization": f"Bearer {key}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "model": "nvidia/deepseek-ai/deepseek-v4-flash",
+                "messages": [{"role": "user", "content": prompt}],
+                "temperature": 0,
+                "max_tokens": 500,
+            },
+            timeout=30,
+        )
+        resp.raise_for_status()
+        result = resp.json()["choices"][0]["message"]["content"].strip()
+        if len(result) < len(raw_text) * 0.3:
+            print("     Aviso: roteiro muito curto, usando original")
+            return raw_text
+        print(f"     Roteiro refinado via NVIDIA Deepseek Flash")
+        return result
+    except Exception as e:
+        print(f"     Aviso: LLM falhou ({e}), usando texto original")
+        return raw_text
+
+
 async def main():
     print("[1/4] Buscando fato curioso...")
     topic, fact = fetch_fact()
     print(f"     Tópico: {topic}")
     print(f"     Fato: {fact[:80]}...")
+    fact = refine_script(topic, fact)
 
     title = f"{topic.upper()} #Shorts"
     tags = ["curiosidades", "vocesabia", "fatos", topic.replace(" ", ""), "conhecimento", "aprender"]
@@ -869,21 +1011,21 @@ async def main():
 
     print("[2/4] Gerando áudio...")
     audio_path = str(OUTPUT_DIR / "audio.mp3")
-    await generate_audio(fact, audio_path)
+    submaker = await generate_audio(fact, audio_path)
 
     print("[3/4] Buscando e editando vídeo...")
     video_paths = fetch_videos(topic, OUTPUT_DIR, num_clips=3)
     if not video_paths:
-        print("     Aviso: sem videos do Pexels, pulando...")
+        print("     Aviso: sem videos (Pexels e Pixabay), pulando...")
         return
 
     print("     Buscando música de fundo...")
     bg_music = fetch_background_music()
 
     final_path = str(OUTPUT_DIR / "final.mp4")
-    srt_path = None
+    srt_path = str(OUTPUT_DIR / "legendas.srt")
     try:
-        srt_path = create_short(video_paths, audio_path, fact, final_path, topic, bg_music)
+        create_short(video_paths, audio_path, fact, final_path, topic, bg_music, srt_path, submaker)
     except Exception as e:
         print(f"     ERRO ao criar video: {e}")
         return
@@ -893,15 +1035,9 @@ async def main():
         return
 
     print("[4/4] Fazendo upload para o YouTube...")
-    result = upload_short(final_path, title, description, tags)
-    video_id = result["id"]
-    print(f"     Upload OK! ID: {video_id}")
-    print(f"     Link: https://youtube.com/shorts/{video_id}")
-
-    if srt_path and os.path.exists(srt_path):
-        print("     Enviando legenda SRT...")
-        youtube = get_authenticated_service()
-        upload_caption(youtube, video_id, srt_path)
+    result = upload_short(final_path, title, description, tags, srt_path)
+    print(f"     Upload OK! ID: {result['id']}")
+    print(f"     Link: https://youtube.com/shorts/{result['id']}")
 
     if _used_topics:
         save_used_topics(_used_topics)
