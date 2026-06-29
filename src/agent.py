@@ -237,6 +237,7 @@ def fetch_fact(max_retries: int = 10) -> tuple[str, str]:
     available = [t for t in TOPICS if t not in _used_topics]
     if not available:
         _used_topics.clear()
+        available = list(TOPICS)
 
     random.shuffle(available)
     selected = available[:max_retries]
@@ -688,7 +689,10 @@ async def generate_audio(text: str, output_path: str) -> SubMaker:
             if chunk["type"] == "audio":
                 audio_file.write(chunk["data"])
             elif chunk["type"] == "WordBoundary":
-                submaker.feed(chunk)
+                try:
+                    submaker.feed(chunk)
+                except Exception as e:
+                    print(f"     Aviso: erro ao processar WordBoundary ({e})")
         audio_file.seek(0)
         with open(output_path, "wb") as f:
             f.write(audio_file.read())
@@ -739,9 +743,25 @@ def _srt_time(seconds: float) -> str:
     ms = int((seconds - int(seconds)) * 1000)
     return f"{h:02d}:{m:02d}:{s:02d},{ms:03d}"
 
-def generate_srt_body(submaker: SubMaker, hook_word_count: int, body_start: float, srt_path: str):
+def generate_srt(sentences: list[str], start_time: float, seg_duration: float, output_path: str):
+    lines = []
+    for i, sentence in enumerate(sentences):
+        if not sentence.strip():
+            continue
+        start = start_time + (i * seg_duration)
+        end = start + seg_duration
+        lines.append(f"{len(lines) + 1}")
+        lines.append(f"{_srt_time(start)} --> {_srt_time(end)}")
+        lines.append(sentence.strip())
+        lines.append("")
+    Path(output_path).write_text("\n".join(lines), encoding="utf-8")
+    print(f"     SRT gerado: {output_path} ({len(sentences)} segmentos)")
+
+def generate_srt_body(submaker: SubMaker, hook_word_count: int, body_start: float, srt_path: str, sentences: list[str], seg_duration: float):
     cues = submaker.cues
     if len(cues) <= hook_word_count:
+        print("     Word-level SRT indisponivel, usando fallback por frase")
+        generate_srt(sentences, body_start, seg_duration, srt_path)
         return
     body_cues = cues[hook_word_count:]
     first_start = body_cues[0].start.total_seconds()
@@ -832,11 +852,13 @@ def create_short(video_paths: list[str], audio_path: str, text: str, output_path
         .with_start(HOOK_DURATION).with_duration(COUNTDOWN_DURATION)
     txt_clips.append(countdown_txt)
 
+    srt_sentences: list[str] = []
     for i, sentence in enumerate(sentences):
         sentence = sentence.strip()
         if not sentence:
             continue
         start = body_start + (i * seg_duration)
+        srt_sentences.append(sentence)
 
         highlight = _extract_highlight(sentence)
         if highlight:
@@ -845,9 +867,11 @@ def create_short(video_paths: list[str], audio_path: str, text: str, output_path
 
     txt_clips.extend(highlight_clips)
 
-    if srt_path and submaker:
+    if srt_path and submaker and submaker.cues:
         hook_words = len(hook_text.split())
-        generate_srt_body(submaker, hook_words, body_start, srt_path)
+        generate_srt_body(submaker, hook_words, body_start, srt_path, srt_sentences, seg_duration)
+    elif srt_path and srt_sentences:
+        generate_srt(srt_sentences, body_start, seg_duration, srt_path)
 
     cta_start = audio_duration - CTA_DURATION
     cta_text = random.choice(CTA_TEXTS)
@@ -965,15 +989,17 @@ def refine_script(topic: str, raw_text: str) -> str:
         "5. Máximo de 150 palavras\n\n"
         f"Texto:\n{raw_text}"
     )
+    api_url = os.getenv("LLM_API_URL", "https://integrate.api.nvidia.com/v1/chat/completions")
+    model = os.getenv("LLM_MODEL", "deepseek-ai/deepseek-v4-flash")
     try:
         resp = requests.post(
-            "https://integrate.api.nvidia.com/v1/chat/completions",
+            api_url,
             headers={
                 "Authorization": f"Bearer {key}",
                 "Content-Type": "application/json",
             },
             json={
-                "model": "nvidia/deepseek-ai/deepseek-v4-flash",
+                "model": model,
                 "messages": [{"role": "user", "content": prompt}],
                 "temperature": 0,
                 "max_tokens": 500,
@@ -985,7 +1011,7 @@ def refine_script(topic: str, raw_text: str) -> str:
         if len(result) < len(raw_text) * 0.3:
             print("     Aviso: roteiro muito curto, usando original")
             return raw_text
-        print(f"     Roteiro refinado via NVIDIA Deepseek Flash")
+        print(f"     Roteiro refinado via LLM ({model})")
         return result
     except Exception as e:
         print(f"     Aviso: LLM falhou ({e}), usando texto original")
