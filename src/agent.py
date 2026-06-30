@@ -227,6 +227,96 @@ def _is_disambig(page) -> bool:
     return "página de desambiguação" in summary
 
 
+CURIOSITY_CATEGORIES = {
+    "Ciência", "História", "Biologia", "Astronomia", "Astronáutica",
+    "Tecnologia", "Natureza", "Geografia", "Física", "Química",
+    "Pré-história", "Paleontologia", "Geologia", "Oceanografia",
+    "Arqueologia", "Mitologia", "Evolução", "Genética",
+    "Ecologia", "Meteorologia", "Botânica", "Zoologia",
+    "Anatomia", "Fisiologia", "Medicina", "Psicologia",
+    "Nutrição", "Saúde", "Doenças",
+    "Arte", "Música", "Arquitetura",
+    "Exploração", "Desporto", "Cultura",
+    "Transporte", "Comunicação",
+    "Engenharia", "Matemática", "Filosofia",
+    "Religião", "Sociedade", "Política",
+    "Economia", "Demografia", "Guerra",
+    "Mamíferos", "Aves", "Répteis", "Anfíbios",
+    "Peixes", "Insetos", "Dinossauros",
+    "Fungos", "Bactérias", "Vírus",
+    "Célula", "DNA",
+    "Cosmologia", "Planetas", "Estrelas", "Galáxias",
+    "Inventores", "Descobertas",
+    "Corpo humano", "Sistema nervoso", "Sistema circulatório",
+    "Sistema respiratório", "Sistema digestivo",
+    "Sistema esquelético", "Sistema muscular",
+    "Comportamento animal", "Espécies",
+    "Fenômenos naturais", "Catástrofes naturais",
+    "Energia", "Sustentabilidade", "Meio ambiente",
+    "Astronomia", "Exploração espacial",
+    "Biotecnologia", "Nanotecnologia", "Robótica",
+    "Inteligência artificial", "Computação",
+    "Energia nuclear", "Energia renovável",
+    "Fóssil", "Eras geológicas",
+    "Civilizações antigas", "Idade Média",
+    "Idade Moderna", "Idade Contemporânea",
+    "Brasil Colônia", "Impérios",
+    "Marinha", "Aviação",
+    "Navegação", "Grandes Navegações",
+    "Materiais", "Invenções",
+    "Instrumentos científicos", "Instrumentos musicais",
+}
+
+
+def _fetch_random_topic(api, user_agent, max_attempts: int = 50) -> tuple[str, object] | tuple[None, None]:
+    session = requests.Session()
+    for _ in range(0, max_attempts, 30):
+        try:
+            resp = session.get(
+                "https://pt.wikipedia.org/w/api.php",
+                params={
+                    "action": "query",
+                    "generator": "random",
+                    "grnnamespace": 0,
+                    "grnlimit": min(30, max_attempts),
+                    "prop": "categories",
+                    "cllimit": 50,
+                    "format": "json",
+                },
+                headers={"User-Agent": user_agent},
+                timeout=15,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            pages = data.get("query", {}).get("pages", {}).values()
+            candidates = []
+            for page_data in pages:
+                title = page_data.get("title", "")
+                if not title or title in _used_topics:
+                    continue
+                cats = page_data.get("categories", [])
+                cat_titles = {c["title"].replace("Categoria:", "").split("/")[0] for c in cats}
+                if not cat_titles & CURIOSITY_CATEGORIES:
+                    continue
+                candidates.append(title)
+
+            for title in candidates:
+                page = api.page(title)
+                if not page.exists() or _is_disambig(page):
+                    continue
+                summary = page.summary[:2000].strip()
+                if not summary or len(summary) < 80:
+                    continue
+                print(f"     Artigo aleatorio encontrado: {title}")
+                return title, page
+
+        except Exception as e:
+            print(f"     Aviso: erro ao buscar artigos aleatorios ({e})")
+            continue
+
+    return None, None
+
+
 def fetch_fact(max_retries: int = 10) -> tuple[str, str]:
     global _used_topics
     user_agent = "CuriosityShortsAgent/1.0 (github.com/user)"
@@ -234,27 +324,47 @@ def fetch_fact(max_retries: int = 10) -> tuple[str, str]:
 
     if _used_topics is None:
         _used_topics = load_used_topics()
+
     available = [t for t in TOPICS if t not in _used_topics]
-    if not available:
-        _used_topics.clear()
-        available = list(TOPICS)
 
-    random.shuffle(available)
-    selected = available[:max_retries]
+    if available:
+        random.shuffle(available)
+        selected = available[:max_retries]
 
-    for topic in selected:
-        page = api.page(topic)
+        for topic in selected:
+            page = api.page(topic)
 
-        if not page.exists():
-            continue
-        if _is_disambig(page):
-            continue
+            if not page.exists():
+                continue
+            if _is_disambig(page):
+                continue
 
+            summary = page.summary[:2000].strip()
+            summary = re.sub(r'\s+', ' ', summary)
+
+            if not summary or len(summary) < 80:
+                continue
+
+            if random.random() < 0.4:
+                sections = [s for s in page.sections if s.text.strip() and len(s.text) > 100]
+                if sections:
+                    section = random.choice(sections)
+                    summary = section.text[:2000].strip()
+                    summary = re.sub(r'\s+', ' ', summary)
+
+            hook_template = random.choice(HOOKS)
+            intro = hook_template.format(topic=topic) + "?"
+            full_text = f"{intro}\n\n{summary}"
+            _used_topics.add(topic)
+            return topic, full_text
+
+        print("     Nenhum topico curado disponivel, buscando artigos aleatorios na Wikipedia...")
+
+    print("     Buscando artigos aleatorios na Wikipedia (topicos curados esgotados)...")
+    topic, page = _fetch_random_topic(api, user_agent, max_attempts=50)
+    if page:
         summary = page.summary[:2000].strip()
         summary = re.sub(r'\s+', ' ', summary)
-
-        if not summary or len(summary) < 80:
-            continue
 
         if random.random() < 0.4:
             sections = [s for s in page.sections if s.text.strip() and len(s.text) > 100]
