@@ -105,54 +105,17 @@ def save_used_topics(topics: set[str]):
 
 _used_topics: set[str] | None = None
 
-TOPICS = [
-    "Buraco negro", "Big Bang", "Sistema Solar", "Missão Apollo 11",
-    "Estrela", "Exploração espacial",
-    "Evolução humana", "DNA", "Fotossíntese",
-    "Extinção dos dinossauros", "Baleia-azul", "Recifes de coral",
-    "Animais em extinção", "Abelha",
-    "Império Romano", "Civilização Maia", "Antigo Egito",
-    "Pirâmides de Gizé", "Múmia", "Descobrimento do Brasil",
-    "Cérebro humano", "Sistema imunológico", "Vacina",
-    "Olho humano", "Coração (anatomia)",
-    "Invenção do telefone", "História da internet",
-    "Teoria da relatividade", "Eletricidade",
-    "Aurora polar", "Tsunami", "Vulcão", "Terremoto",
-    "Amazônia", "Fundo oceânico",
-    "História do chocolate", "Mitologia grega",
-    "Fóssil", "Fermentação", "Ciclo da água",
-    "Guerra Fria", "Guerra dos Cem Anos",
-    "Invenção da imprensa", "Revolução Francesa",
-    "Seda", "Rota da Seda",
-    "Como funciona o GPS", "Como funciona a internet",
-    "Origem da música", "História do cinema",
-    "Maior deserto do mundo", "Ilha mais remota do mundo",
-    "Língua mais falada do mundo", "Animal mais rápido do mundo",
-    "O que causa os sonhos", "Por que bocejamos",
-    "Por que o céu é azul", "Como funcionam os terremotos",
-    "Maior vulcão do mundo", "Fossa das Marianas",
-    "Animais bioluminescentes", "Camuflagem dos animais",
-    "Hibernação", "Migração dos animais",
-    "Plantas carnívoras", "Cogumelos alucinógenos",
-    "Idade Média", "Peste Negra",
-    "Vikings", "Castelos medievais",
-    "Cavalaria medieval", "Samurai",
-    "Grandes Navegações", "Brasil Colônia",
-    "Inconfidência Mineira", "Independência do Brasil",
-    "Origem do Carnaval", "História do Futebol",
-    "Origem do Universo", "Matéria escura",
-    "Buraco de minhoca", "Viagem no tempo",
-    "Clonagem", "CRISPR (edição genética)", "Células-tronco",
-    "Robótica", "Inteligência Artificial", "Realidade virtual",
-    "Primeiro computador", "Invenção do rádio", "Invenção da lâmpada",
-    "Maior avião do mundo", "Trem mais rápido do mundo",
-    "Muralha da China", "Machu Picchu", "Stonehenge",
-    "Guerra de Tróia", "Catacumbas de Paris",
-    "Maior tempestade já registrada", "Cachoeira mais alta do mundo",
-    "Lago mais profundo do mundo", "Rio mais longo do mundo",
-    "Polvo (inteligência)", "Ornitorrinco",
-    "Lula-colossal", "Tubarão-baleia",
-    "Açaí", "Café (origem)",
+FALLBACK_POOL: list[tuple[str, str]] = [
+    ("curiosidades", "Você sabia que a curiosidade move o mundo? Cada pergunta abre uma porta para um novo conhecimento!"),
+    ("descobertas", "O mundo está cheio de descobertas incríveis! Hoje vamos aprender algo novo:"),
+    ("conhecimento", "O conhecimento é infinito! Vamos explorar mais um fato fascinante da história ou da ciência:"),
+    ("fatos", "Nosso cérebro processa milhares de informações por dia. Mas esse fato vai se destacar:"),
+    ("ciencia", "A ciência está em tudo ao nosso redor! Vamos conferir mais um fato curioso:"),
+    ("natureza", "A natureza nunca para de nos surpreender! Hoje vamos descobrir mais um segredo:"),
+    ("historia", "A história guarda segredos que poucos conhecem. Vamos revelar mais um:"),
+    ("universo", "O universo é vasto e cheio de mistérios. Vamos explorar mais um deles:"),
+    ("inovacao", "Inovações e descobertas mudaram o mundo! Vamos conhecer mais uma:"),
+    ("cultura", "Cada cultura tem suas histórias. Hoje vamos descobrir mais uma:"),
 ]
 
 WIKI_LANG = "pt"
@@ -227,60 +190,131 @@ def _is_disambig(page) -> bool:
     return "página de desambiguação" in summary
 
 
-CURIOSITY_CATEGORIES = {
-    "Ciência", "História", "Biologia", "Astronomia", "Astronáutica",
-    "Tecnologia", "Natureza", "Geografia", "Física", "Química",
-    "Pré-história", "Paleontologia", "Geologia", "Oceanografia",
-    "Arqueologia", "Mitologia", "Evolução", "Genética",
-    "Ecologia", "Meteorologia", "Botânica", "Zoologia",
-    "Anatomia", "Fisiologia", "Medicina", "Psicologia",
-    "Nutrição", "Saúde", "Doenças",
-    "Arte", "Música", "Arquitetura",
-    "Exploração", "Desporto", "Cultura",
-    "Transporte", "Comunicação",
-    "Engenharia", "Matemática", "Filosofia",
-    "Religião", "Sociedade", "Política",
-    "Economia", "Demografia", "Guerra",
-    "Mamíferos", "Aves", "Répteis", "Anfíbios",
-    "Peixes", "Insetos", "Dinossauros",
-    "Fungos", "Bactérias", "Vírus",
-    "Célula", "DNA",
-    "Cosmologia", "Planetas", "Estrelas", "Galáxias",
-    "Inventores", "Descobertas",
-    "Corpo humano", "Sistema nervoso", "Sistema circulatório",
-    "Sistema respiratório", "Sistema digestivo",
-    "Sistema esquelético", "Sistema muscular",
-    "Comportamento animal", "Espécies",
-    "Fenômenos naturais", "Catástrofes naturais",
-    "Energia", "Sustentabilidade", "Meio ambiente",
-    "Astronomia", "Exploração espacial",
-    "Biotecnologia", "Nanotecnologia", "Robótica",
-    "Inteligência artificial", "Computação",
-    "Energia nuclear", "Energia renovável",
-    "Fóssil", "Eras geológicas",
-    "Civilizações antigas", "Idade Média",
-    "Idade Moderna", "Idade Contemporânea",
-    "Brasil Colônia", "Impérios",
-    "Marinha", "Aviação",
-    "Navegação", "Grandes Navegações",
-    "Materiais", "Invenções",
-    "Instrumentos científicos", "Instrumentos musicais",
-}
+RICH_CATEGORIES = [
+    "Astronomia", "Planetas do Sistema Solar", "Estrelas", "Galáxias",
+    "Asteroides", "Cosmologia", "Exploração espacial", "Satélites artificiais",
+    "Buraco negro", "Cometas", "Missões espaciais", "Naves espaciais",
+    "Aracnídeos", "Insetos", "Mamíferos", "Aves", "Répteis",
+    "Anfíbios", "Peixes", "Moluscos", "Crustáceos", "Aranhas",
+    "Espécies de animais", "Animais peçonhentos", "Animais em extinção",
+    "Comportamento animal", "Camuflagem", "Hibernação", "Migração animal",
+    "Dinossauros", "Fósseis", "Pré-história", "Paleontologia",
+    "Mamíferos pré-históricos", "Répteis pré-históricos",
+    "Oceanografia", "Vida marinha", "Recifes de coral", "Mamíferos marinhos",
+    "Anatomia humana", "Sistema nervoso", "Sistema circulatório",
+    "Sistema respiratório", "Sistema digestivo", "Sistema muscular",
+    "Sistema esquelético", "Olho humano", "Coração", "Cérebro",
+    "Pele", "Ossos", "Músculos", "Sangue", "Sistema imunológico",
+    "História antiga", "Civilizações antigas", "Egito Antigo",
+    "Roma Antiga", "Grécia Antiga", "Idade Média", "Impérios",
+    "Grandes Navegações", "Guerras", "Pirâmides", "Faraós",
+    "Invenções", "Robótica", "Inteligência artificial", "Computação",
+    "Instrumentos científicos", "História da tecnologia",
+    "Vulcanologia", "Sismologia", "Minerais", "Geologia",
+    "Fenômenos naturais", "Catástrofes naturais", "Clima", "Meteorologia",
+    "Plantas", "Botânica", "Fungos", "Plantas carnívoras",
+    "Árvores", "Flores", "Frutas", "Cogumelos",
+    "Física", "Química", "Genética", "Evolução",
+    "Descobertas científicas", "Biotecnologia", "Nanotecnologia",
+    "Mitologia grega", "Mitologia romana", "Arqueologia",
+    "Transportes", "Aviação", "Marinha", "Ferrovias",
+    "Arte", "Música", "Pintura", "Escultura", "Arquitetura",
+    "Idiomas", "Escrita", "Comunicação",
+    "Medicina", "Doenças", "Vacinas", "Vírus", "Bactérias",
+]
 
+_WEAK_TITLE = re.compile(
+    r'^(História d[aeo]|Lista d|Certificado|Legislação|Regulamento|'
+    r'Classificação|Efeitos d[aeo]|Conceito de|Norma|Direito|'
+    r'Imposto|Contribuição|Decreto|Portaria|Resolução|'
+    r'Influência d[aeo]|Impacto d[aeo]|Análise d[aeo]|'
+    r'Estudo d[aeo]|Avaliação d[aeo]|Considerações|'
+    r'Comunicação\s|Relações\s|Teoria d[aeo]|'
+    r'Procedimento|Protocolo|Técnica de|Método de)',
+    re.IGNORECASE
+)
 
-def _fetch_random_topic(api, user_agent, max_attempts: int = 50) -> tuple[str, object] | tuple[None, None]:
+_STRONG_TITLE = re.compile(
+    r'\(.*\)|'
+    r'\b(aranha|escorpião|tarântula|planeta|vulcão|'
+    r'dinossauro|tiranossauro|tricerátops|oss[oa]|músculo|'
+    r'nervo|artéria|veia|cérebro|coração|olho|pele|sangue|'
+    r'estrela|galáxia|asteroide|cometa|satélite|'
+    r'espécie|inseto|mamífero|ave|réptil|anfíbio|'
+    r'molusco|crustáceo|fungo|bactéria|vírus|'
+    r'invenção|trem|avião|navio|foguete|fóssil|'
+    r'pirâmide|templo|castelo|muralha|múmia|faraó|'
+    r'imperador|imperatriz|rei|rainha|guerra|batalha|'
+    r'expedição|navegação|descoberta|'
+    r'predador|caça|veneno|peçonha|'
+    r'gigante|maior|menor|mais\s+rápido|mais\s+lento)',
+    re.IGNORECASE
+)
+
+def _title_score(title: str) -> int:
+    if _WEAK_TITLE.search(title):
+        return -1
+    score = 0
+    if _STRONG_TITLE.search(title):
+        score += 2
+    if '(' in title and ')' in title:
+        score += 1
+    words = title.split()
+    if len(words) >= 2:
+        score += 1
+    if len(words) >= 4:
+        score += 1
+    return score
+
+def _pick_best_article(candidates: list[dict]) -> dict | None:
+    scored = [(c, _title_score(c["title"])) for c in candidates]
+    scored.sort(key=lambda x: -x[1])
+    if scored and scored[0][1] >= 0:
+        print(f"     Candidato: {scored[0][0]['title']} (score {scored[0][1]})")
+        return scored[0][0]
+    # Aceita o melhor negativo se nao tiver nada positivo
+    if scored:
+        print(f"     Candidato (fallback): {scored[0][0]['title']} (score {scored[0][1]})")
+        return scored[0][0]
+    return None
+
+def _page_ok(pd: dict) -> bool:
+    title = pd.get("title", "")
+    if not title or title in _used_topics:
+        return False
+    if pd.get("ns", 0) != 0:
+        return False
+    if pd.get("pageprops", {}).get("disambiguation"):
+        return False
+    extract = pd.get("extract", "")
+    if not extract or len(extract.strip()) < 80:
+        return False
+    return True
+
+def _fetch_random_topic(api, user_agent, max_categories: int = 20) -> tuple[str, object] | tuple[None, None]:
     session = requests.Session()
-    for _ in range(0, max_attempts, 30):
+    available = [c for c in RICH_CATEGORIES if c not in _used_topics]
+    if not available:
+        available = [c for c in RICH_CATEGORIES if c.lower() not in {t.lower() for t in _used_topics}]
+    random.shuffle(available)
+    tried_cats = 0
+    for category in available:
+        if tried_cats >= max_categories:
+            break
+        tried_cats += 1
         try:
             resp = session.get(
                 "https://pt.wikipedia.org/w/api.php",
                 params={
                     "action": "query",
-                    "generator": "random",
-                    "grnnamespace": 0,
-                    "grnlimit": min(30, max_attempts),
-                    "prop": "categories",
-                    "cllimit": 50,
+                    "generator": "categorymembers",
+                    "gcmtitle": f"Categoria:{category}",
+                    "gcmtype": "page",
+                    "gcmlimit": 50,
+                    "prop": "extracts|pageprops",
+                    "exintro": True,
+                    "explaintext": True,
+                    "exchars": 200,
                     "format": "json",
                 },
                 headers={"User-Agent": user_agent},
@@ -288,36 +322,56 @@ def _fetch_random_topic(api, user_agent, max_attempts: int = 50) -> tuple[str, o
             )
             resp.raise_for_status()
             data = resp.json()
-            pages = data.get("query", {}).get("pages", {}).values()
-            candidates = []
-            for page_data in pages:
-                title = page_data.get("title", "")
-                if not title or title in _used_topics:
-                    continue
-                cats = page_data.get("categories", [])
-                cat_titles = {c["title"].replace("Categoria:", "").split("/")[0] for c in cats}
-                if not cat_titles & CURIOSITY_CATEGORIES:
-                    continue
-                candidates.append(title)
-
-            for title in candidates:
-                page = api.page(title)
-                if not page.exists() or _is_disambig(page):
-                    continue
-                summary = page.summary[:2000].strip()
-                if not summary or len(summary) < 80:
-                    continue
-                print(f"     Artigo aleatorio encontrado: {title}")
-                return title, page
+            pages = list(data.get("query", {}).get("pages", {}).values())
+            if not pages:
+                continue
+            random.shuffle(pages)
+            candidates = [pd for pd in pages if _page_ok(pd)]
+            best = _pick_best_article(candidates)
+            if best:
+                page = api.page(best["title"])
+                if page.exists() and not _is_disambig(page):
+                    return best["title"], page
 
         except Exception as e:
-            print(f"     Aviso: erro ao buscar artigos aleatorios ({e})")
+            print(f"     Aviso: erro ao buscar categoria '{category}' ({e})")
+            continue
+
+    print(f"     Categorias exauridas ({tried_cats}), tentando artigos totalmente aleatorios...")
+    for _ in range(0, 200, 30):
+        try:
+            resp = session.get(
+                "https://pt.wikipedia.org/w/api.php",
+                params={
+                    "action": "query",
+                    "generator": "random",
+                    "grnnamespace": 0,
+                    "grnlimit": min(30, 200),
+                    "prop": "extracts|pageprops",
+                    "exintro": True,
+                    "explaintext": True,
+                    "exchars": 200,
+                    "format": "json",
+                },
+                headers={"User-Agent": user_agent},
+                timeout=15,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            candidates = [pd for pd in data.get("query", {}).get("pages", {}).values() if _page_ok(pd)]
+            best = _pick_best_article(candidates)
+            if best:
+                page = api.page(best["title"])
+                if page.exists() and not _is_disambig(page):
+                    return best["title"], page
+        except Exception as e:
+            print(f"     Aviso: erro na busca aleatoria ({e})")
             continue
 
     return None, None
 
 
-def fetch_fact(max_retries: int = 10) -> tuple[str, str]:
+def fetch_fact() -> tuple[str, str]:
     global _used_topics
     user_agent = "CuriosityShortsAgent/1.0 (github.com/user)"
     api = wikipediaapi.Wikipedia(user_agent, WIKI_LANG)
@@ -325,43 +379,8 @@ def fetch_fact(max_retries: int = 10) -> tuple[str, str]:
     if _used_topics is None:
         _used_topics = load_used_topics()
 
-    available = [t for t in TOPICS if t not in _used_topics]
-
-    if available:
-        random.shuffle(available)
-        selected = available[:max_retries]
-
-        for topic in selected:
-            page = api.page(topic)
-
-            if not page.exists():
-                continue
-            if _is_disambig(page):
-                continue
-
-            summary = page.summary[:2000].strip()
-            summary = re.sub(r'\s+', ' ', summary)
-
-            if not summary or len(summary) < 80:
-                continue
-
-            if random.random() < 0.4:
-                sections = [s for s in page.sections if s.text.strip() and len(s.text) > 100]
-                if sections:
-                    section = random.choice(sections)
-                    summary = section.text[:2000].strip()
-                    summary = re.sub(r'\s+', ' ', summary)
-
-            hook_template = random.choice(HOOKS)
-            intro = hook_template.format(topic=topic) + "?"
-            full_text = f"{intro}\n\n{summary}"
-            _used_topics.add(topic)
-            return topic, full_text
-
-        print("     Nenhum topico curado disponivel, buscando artigos aleatorios na Wikipedia...")
-
-    print("     Buscando artigos aleatorios na Wikipedia (topicos curados esgotados)...")
-    topic, page = _fetch_random_topic(api, user_agent, max_attempts=50)
+    print("     Buscando artigos aleatorios na Wikipedia...")
+    topic, page = _fetch_random_topic(api, user_agent)
     if page:
         summary = page.summary[:2000].strip()
         summary = re.sub(r'\s+', ' ', summary)
@@ -379,7 +398,8 @@ def fetch_fact(max_retries: int = 10) -> tuple[str, str]:
         _used_topics.add(topic)
         return topic, full_text
 
-    return "curiosidades", "Você sabia que a curiosidade move o mundo? Cada pergunta abre uma porta para um novo conhecimento!"
+    print("     Aviso: limite de tentativas excedido. Usando fallback...")
+    return random.choice(FALLBACK_POOL)
 
 
 TOPIC_QUERIES: dict[str, list[str]] = {
@@ -504,54 +524,69 @@ CATEGORY_FALLBACKS = {
 }
 
 
-def _get_category(topic: str) -> str:
-    space = {"Buraco negro", "Big Bang", "Sistema Solar", "Missão Apollo 11",
-             "Estrela", "Exploração espacial", "Aurora polar",
-             "Origem do Universo", "Matéria escura", "Buraco de minhoca"}
-    ocean = {"Baleia-azul", "Recifes de coral", "Fundo oceânico", "Fossa das Marianas",
-             "Animais bioluminescentes", "Tsunami",
-             "Polvo (inteligência)", "Lula-colossal", "Tubarão-baleia"}
-    nature_set = {"Fotossíntese", "Amazônia", "Maior deserto do mundo", "Plantas carnívoras",
-                  "Cogumelos alucinógenos", "Abelha", "Camuflagem dos animais",
-                  "Hibernação", "Migração dos animais", "Animais em extinção",
-                  "Animal mais rápido do mundo", "Maior vulcão do mundo",
-                  "Maior tempestade já registrada", "Cachoeira mais alta do mundo",
-                  "Lago mais profundo do mundo", "Rio mais longo do mundo",
-                  "Ornitorrinco", "Açaí", "Café (origem)",
-                  "Vulcão", "Terremoto", "Ilha mais remota do mundo"}
-    science_set = {"DNA", "Cérebro humano", "Sistema imunológico", "Vacina",
-                   "Olho humano", "Coração (anatomia)", "Teoria da relatividade",
-                   "Eletricidade", "Fermentação", "Ciclo da água",
-                   "Como funciona o GPS", "Como funciona a internet",
-                   "O que causa os sonhos", "Por que bocejamos",
-                   "Por que o céu é azul", "Como funcionam os terremotos",
-                   "Viagem no tempo", "Clonagem", "CRISPR (edição genética)",
-                   "Células-tronco", "Robótica", "Inteligência Artificial",
-                   "Realidade virtual", "Primeiro computador"}
-    history_set = {"Império Romano", "Civilização Maia", "Antigo Egito",
-                   "Pirâmides de Gizé", "Múmia", "Descobrimento do Brasil",
-                   "Invenção do telefone", "História da internet",
-                   "História do chocolate", "Mitologia grega", "Fóssil",
-                   "Guerra Fria", "Guerra dos Cem Anos", "Invenção da imprensa",
-                   "Revolução Francesa", "Seda", "Rota da Seda",
-                   "Origem da música", "História do cinema",
-                   "Idade Média", "Peste Negra", "Vikings", "Castelos medievais",
-                   "Cavalaria medieval", "Samurai", "Grandes Navegações",
-                   "Brasil Colônia", "Inconfidência Mineira",
-                   "Independência do Brasil", "Origem do Carnaval",
-                   "História do Futebol", "Evolução humana",
-                   "Extinção dos dinossauros",
-                   "Invenção do rádio", "Invenção da lâmpada",
-                   "Muralha da China", "Machu Picchu", "Stonehenge",
-                   "Guerra de Tróia", "Catacumbas de Paris",
-                   "Maior avião do mundo", "Trem mais rápido do mundo",
-                   "Língua mais falada do mundo"}
+def _has_any(text: str, keywords: list[str]) -> bool:
+    t = text.lower()
+    for kw in keywords:
+        if ' ' in kw:
+            if kw in t:
+                return True
+        else:
+            if re.search(rf'\b{re.escape(kw)}', t):
+                return True
+    return False
 
-    if topic in space: return "space"
-    if topic in ocean: return "ocean"
-    if topic in nature_set: return "nature"
-    if topic in science_set: return "science"
-    if topic in history_set: return "history"
+def _get_category(topic: str) -> str:
+    t = topic.lower()
+    if _has_any(t, ["planeta", "estrela", "galáxia", "astronomia", "astronômico",
+            "espacial", "buraco negro", "cometa", "asteroide", "satélite",
+            "cosmo", "universo", "lua", "marte", "júpiter", "saturno", "netuno",
+            "urano", "vênus", "mercúrio", "sol", "nébula", "constelação",
+            "órbita", "foguete", "nave espacial", "via láctea",
+            "matéria escura", "big bang", "aurora polar", "buraco de minhoca",
+            "exploração espacial", "viagem no tempo"]):
+        return "space"
+    if _has_any(t, ["oceano", "marinho", "recife", "coral", "baleia", "golfinho",
+            "tubarão", "peixe", "molusco", "crustáceo", "submarino",
+            "onda", "fossa", "mariana", "lula", "polvo", "cavalo-marinho",
+            "água-viva", "caranguejo", "lagosta", "camarão", "fundo oceânico",
+            "mamífero marinho", "vida marinha"]):
+        return "ocean"
+    if _has_any(t, ["história", "antigo", "egito", "roma", "grécia",
+            "império", "medieval", "idade média", "castelo", "pirâmide", "faraó",
+            "múmia", "pré-história", "dinossauro", "fóssil", "guerra", "batalha",
+            "revolução", "civilização", "maia", "inca", "asteca", "navegação",
+            "colônia", "independência", "imprensa", "mitologia", "viking",
+            "samurai", "cavalaria", "muralha", "stonehenge", "catacumba",
+            "tróia", "peste negra", "descobrimento", "industrialização"]):
+        return "history"
+    if _has_any(t, ["cérebro", "coração", "olho", "anatomia", "músculo",
+            "osso", "nervo", "sangue", "dna", "gene", "genética", "evolução",
+            "célula", "vírus", "bactéria", "vacina", "imunológico", "doença",
+            "medicina", "física", "química", "biologia", "robótica",
+            "inteligência artificial", "computador", "tecnologia", "engenharia",
+            "matemática", "fermentação", "clonagem", "células-tronco",
+            "realidade virtual", "eletricidade", "relatividade", "gps",
+            "internet", "telefone", "rádio", "lâmpada",
+            "invenção", "descoberta", "científica", "científico",
+            "corpo humano", "pele humana", "sistema nervoso", "sistema circulatório",
+            "sistema respiratório", "sistema digestivo", "sistema muscular",
+            "sistema esquelético"]):
+        return "science"
+    if _has_any(t, ["animal", "planta", "flor", "árvore", "inseto",
+            "mamífero", "ave", "réptil", "anfíbio", "fungo", "cogumelo",
+            "selva", "floresta", "montanha", "deserto", "vulcão", "terremoto",
+            "tsunami", "tempestade", "clima", "meteorologia",
+            "camuflagem", "hibernação", "migração", "espécie",
+            "predador", "caça", "veneno", "peçonha", "abelha", "aranha",
+            "escorpião", "cobra", "fotossíntese", "amazônia", "cachoeira",
+            "lago", "rio", "coral", "semente",
+            "polinização", "carnívoro", "bioluminescência", "mariposa",
+            "borboleta", "sapo", "rã", "tartaruga", "lagarto", "águia",
+            "falcão", "coruja", "lobo", "urso", "cavalo", "gato", "cão",
+            "golfinho", "foca", "leão", "tigre", "elefante", "girafa",
+            "zebra", "macaco", "gorila", "chimpanzé", "ornitorrinco",
+            "canguru", "coala", "panda", "camelo", "lhama"]):
+        return "nature"
     return "nature"
 
 
