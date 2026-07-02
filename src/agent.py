@@ -1120,18 +1120,25 @@ def upload_short(file_path: str, title: str, description: str, tags: list[str] |
     return response
 
 
+def _strip_scene_directions(text: str) -> str:
+    text = re.sub(r'\*{1,2}\s*Cena\s+\d+[^*]*\*{1,2}\s*', '', text)
+    text = re.sub(r'\*{1,2}(Locução|Narração|Narrador|Texto)\*{1,2}\s*', '', text)
+    return text.strip()
+
 def refine_script(topic: str, raw_text: str) -> str:
     key = os.getenv("DEEPSEEK_API_KEY")
     if not key:
         return raw_text
     prompt = (
-        "Reescreva o texto abaixo como um roteiro para YouTube Shorts "
-        f"sobre '{topic}'. Regras:\n"
-        "1. Use APENAS as informações do texto original\n"
+        "Reescreva o texto abaixo como narração para YouTube Shorts, "
+        "EM PORTUGUÊS. Regras:\n"
+        f"1. Use APENAS as informações do texto original sobre '{topic}'\n"
         "2. NÃO invente fatos, números, datas ou nomes\n"
-        "3. Mantenha todos os dados exatamente como estão\n"
-        "4. Use linguagem simples e direta\n"
-        "5. Máximo de 150 palavras\n\n"
+        "3. NÃO use cabeçalhos de cena, nem 'Locução:', nem 'Narrador:', "
+        "nem 'Cena 1:', nem asteriscos — retorne APENAS o texto falado\n"
+        "4. Mantenha todos os dados exatamente como estão\n"
+        "5. Use linguagem simples e direta\n"
+        "6. Máximo de 150 palavras\n\n"
         f"Texto:\n{raw_text}"
     )
     api_url = os.getenv("LLM_API_URL", "https://integrate.api.nvidia.com/v1/chat/completions")
@@ -1157,7 +1164,7 @@ def refine_script(topic: str, raw_text: str) -> str:
             print("     Aviso: roteiro muito curto, usando original")
             return raw_text
         print(f"     Roteiro refinado via LLM ({model})")
-        return result
+        return _strip_scene_directions(result)
     except Exception as e:
         print(f"     Aviso: LLM falhou ({e}), usando texto original")
         return raw_text
