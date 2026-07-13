@@ -1120,26 +1120,30 @@ def upload_short(file_path: str, title: str, description: str, tags: list[str] |
     return response
 
 
-def _strip_scene_directions(text: str) -> str:
-    text = re.sub(r'\*{1,2}\s*Cena\s+\d+[^*]*\*{1,2}\s*', '', text)
-    text = re.sub(r'\*{1,2}(Locução|Narração|Narrador|Texto)\*{1,2}\s*', '', text)
-    return text.strip()
-
 def refine_script(topic: str, raw_text: str) -> str:
     key = os.getenv("DEEPSEEK_API_KEY")
     if not key:
         return raw_text
     prompt = (
-        "Reescreva o texto abaixo como narração para YouTube Shorts, "
-        "EM PORTUGUÊS. Regras:\n"
-        f"1. Use APENAS as informações do texto original sobre '{topic}'\n"
-        "2. NÃO invente fatos, números, datas ou nomes\n"
-        "3. NÃO use cabeçalhos de cena, nem 'Locução:', nem 'Narrador:', "
-        "nem 'Cena 1:', nem asteriscos — retorne APENAS o texto falado\n"
-        "4. Mantenha todos os dados exatamente como estão\n"
-        "5. Use linguagem simples e direta\n"
-        "6. Máximo de 150 palavras\n\n"
-        f"Texto:\n{raw_text}"
+        f"Você é um roteirista viral de Shorts com 10 milhões de inscritos. "
+        f"Transforme este fato sobre '{topic}' em uma narrativa que Prenda o espectador nos primeiros 3 segundos.\n\n"
+        f"ESTRUTURA OBRIGATÓRIA:\n"
+        f"1. GANCHO PSICOLÓGICO (frase que gera curiosidade imediata)\n"
+        f"2. CONFLITO/TENÇÃO (o que torna esse fato surpreendente?)\n"
+        f"3. REVELAÇÃO (a resposta que quebra expectativas)\n"
+        f"4. IMPACTO (por que isso importa para o espectador)\n\n"
+        f"REGRAS:\n"
+        f"- Comece com pergunta ou frase impactante\n"
+        f"- Use números específicos quando disponível\n"
+        f"- Crie senso de urgência\n"
+        f"- Termine com algo memorizável\n"
+        f"- Máximo 150 palavras\n"
+        f"- NÃO use formatação de roteiro (sem 'Cena 1:', 'Locução:', asteriscos)\n"
+        f"- NÃO invente fatos, use APENAS o texto original\n\n"
+        f"EXEMPLO DE ESTILO:\n"
+        f"'Você sabia que existe um buraco negro que está crescendo 1 bilhão de vezes mais rápido que deveria? "
+        f"Os astrônomos estão perplexos — e a explicação pode mudar tudo que sabemos sobre o universo.'\n\n"
+        f"TEXTO ORIGINAL:\n{raw_text}"
     )
     api_url = os.getenv("LLM_API_URL", "https://integrate.api.nvidia.com/v1/chat/completions")
     model = os.getenv("LLM_MODEL", "deepseek-ai/deepseek-v4-flash")
@@ -1164,7 +1168,7 @@ def refine_script(topic: str, raw_text: str) -> str:
             print("     Aviso: roteiro muito curto, usando original")
             return raw_text
         print(f"     Roteiro refinado via LLM ({model})")
-        return _strip_scene_directions(result)
+        return result
     except Exception as e:
         print(f"     Aviso: LLM falhou ({e}), usando texto original")
         return raw_text
