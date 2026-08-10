@@ -5,6 +5,8 @@ import random
 import re
 import subprocess
 import io
+import html
+import datetime
 from pathlib import Path
 
 import numpy as np
@@ -223,6 +225,66 @@ RICH_CATEGORIES = [
     "Medicina", "Doenças", "Vacinas", "Vírus", "Bactérias",
 ]
 
+THEME_ORDER = ["espaco", "animais", "historia", "tecnologia", "natureza",
+               "corpo humano", "ciencia", "cultura"]
+
+THEMES: dict[str, list[str]] = {
+    "espaco": [
+        "Astronomia", "Planetas do Sistema Solar", "Estrelas", "Galáxias",
+        "Asteroides", "Cosmologia", "Exploração espacial", "Satélites artificiais",
+        "Buraco negro", "Cometas", "Missões espaciais", "Naves espaciais",
+    ],
+    "animais": [
+        "Aracnídeos", "Insetos", "Mamíferos", "Aves", "Répteis",
+        "Anfíbios", "Peixes", "Moluscos", "Crustáceos", "Aranhas",
+        "Espécies de animais", "Animais peçonhentos", "Animais em extinção",
+        "Comportamento animal", "Camuflagem", "Hibernação", "Migração animal",
+        "Dinossauros", "Fósseis", "Pré-história", "Paleontologia",
+        "Mamíferos pré-históricos", "Répteis pré-históricos",
+    ],
+    "natureza": [
+        "Oceanografia", "Vida marinha", "Recifes de coral", "Mamíferos marinhos",
+        "Vulcanologia", "Sismologia", "Minerais", "Geologia",
+        "Fenômenos naturais", "Catástrofes naturais", "Clima", "Meteorologia",
+        "Plantas", "Botânica", "Fungos", "Plantas carnívoras",
+        "Árvores", "Flores", "Frutas", "Cogumelos",
+    ],
+    "corpo humano": [
+        "Anatomia humana", "Sistema nervoso", "Sistema circulatório",
+        "Sistema respiratório", "Sistema digestivo", "Sistema muscular",
+        "Sistema esquelético", "Olho humano", "Coração", "Cérebro",
+        "Pele", "Ossos", "Músculos", "Sangue", "Sistema imunológico",
+        "Medicina", "Doenças", "Vacinas", "Vírus", "Bactérias",
+    ],
+    "historia": [
+        "História antiga", "Civilizações antigas", "Egito Antigo",
+        "Roma Antiga", "Grécia Antiga", "Idade Média", "Impérios",
+        "Grandes Navegações", "Guerras", "Pirâmides", "Faraós",
+        "Mitologia grega", "Mitologia romana", "Arqueologia",
+    ],
+    "tecnologia": [
+        "Invenções", "Robótica", "Inteligência artificial", "Computação",
+        "Instrumentos científicos", "História da tecnologia",
+        "Transportes", "Aviação", "Marinha", "Ferrovias",
+    ],
+    "ciencia": [
+        "Física", "Química", "Genética", "Evolução",
+        "Descobertas científicas", "Biotecnologia", "Nanotecnologia",
+    ],
+    "cultura": [
+        "Arte", "Música", "Pintura", "Escultura", "Arquitetura",
+        "Idiomas", "Escrita", "Comunicação",
+    ],
+}
+
+def _active_theme() -> str:
+    """Retorna o tema da semana. Usa TEMA_SEMANA se definido, senao rotaciona pela semana ISO."""
+    theme = (os.getenv("TEMA_SEMANA") or "").strip().lower()
+    if theme in THEMES:
+        return theme
+    week = datetime.date.today().isocalendar().week
+    return THEME_ORDER[(week - 1) % len(THEME_ORDER)]
+
 _WEAK_TITLE = re.compile(
     r'^(História d[aeo]|Lista d|Certificado|Legislação|Regulamento|'
     r'Classificação|Efeitos d[aeo]|Conceito de|Norma|Direito|'
@@ -293,9 +355,12 @@ def _page_ok(pd: dict) -> bool:
 
 def _fetch_random_topic(api, user_agent, max_categories: int = 20) -> tuple[str, object] | tuple[None, None]:
     session = requests.Session()
-    available = [c for c in RICH_CATEGORIES if c not in _used_topics]
+    theme = _active_theme()
+    categories = THEMES.get(theme, RICH_CATEGORIES)
+    print(f"     Tema da semana: {theme} ({len(categories)} categorias)")
+    available = [c for c in categories if c not in _used_topics]
     if not available:
-        available = [c for c in RICH_CATEGORIES if c.lower() not in {t.lower() for t in _used_topics}]
+        available = [c for c in categories if c.lower() not in {t.lower() for t in _used_topics}]
     random.shuffle(available)
     tried_cats = 0
     for category in available:
@@ -1120,10 +1185,129 @@ def upload_short(file_path: str, title: str, description: str, tags: list[str] |
     return response
 
 
-def refine_script(topic: str, raw_text: str) -> str:
+def _llm_call(prompt: str, max_tokens: int, temperature: float = 0) -> str | None:
+    """Chamada generica ao LLM. Retorna texto ou None em caso de falha."""
     key = os.getenv("DEEPSEEK_API_KEY")
     if not key:
-        return raw_text
+        print("     Aviso: DEEPSEEK_API_KEY nao configurado")
+        return None
+    api_url = os.getenv("LLM_API_URL", "https://integrate.api.nvidia.com/v1/chat/completions")
+    model = os.getenv("LLM_MODEL", "deepseek-ai/deepseek-v4-flash")
+    try:
+        resp = requests.post(
+            api_url,
+            headers={
+                "Authorization": f"Bearer {key}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "model": model,
+                "messages": [{"role": "user", "content": prompt}],
+                "temperature": temperature,
+                "max_tokens": max_tokens,
+            },
+            timeout=30,
+        )
+        resp.raise_for_status()
+        return resp.json()["choices"][0]["message"]["content"].strip()
+    except Exception as e:
+        print(f"     Aviso: LLM falhou ({e})")
+        return None
+
+
+VIRALITY_THRESHOLD = 7
+
+def _score_topic_virality(topic: str) -> int:
+    """Opcao B: pede ao LLM uma nota 1-10 do potencial viral do topico."""
+    prompt = (
+        f"Avalie se o tema '{topic}' funciona como curiosidade viral para YouTube Shorts.\n\n"
+        f"UM BOM TEMA VIRAL: gera curiosidade imediata, surpreende, tem apelo emocional, "
+        f"é algo que as pessoas querem contar para outras (ex: buracos negros, animais estranhos, "
+        f"segredos históricos, invenções incríveis).\n"
+        f"UM TEMA RUIM: definição de dicionário, nomes de instituições, termos acadêmicos obscuros, "
+        f"conceitos abstratos, nomes de medicamentos, documentos legais, artigos enciclopédicos chatos.\n\n"
+        f"Responda APENAS com um número de 1 a 10 (1 = péssimo tema, 10 = extremamente viral). "
+        f"Não escreva mais nada, apenas o número."
+    )
+    result = _llm_call(prompt, max_tokens=10)
+    if result is None:
+        return 10
+    m = re.search(r'(\d{1,2})', result)
+    try:
+        score = max(1, min(10, int(m.group(1)))) if m else 10
+    except ValueError:
+        score = 10
+    print(f"     Viralidade de '{topic}': {score}/10")
+    return score
+
+
+def _generate_seo_title(topic: str, fact: str) -> str | None:
+    """Gera titulo SEO via LLM (pergunta curiosa). Retorna None se falhar."""
+    prompt = (
+        f"Gere um título para um YouTube Short de curiosidade sobre '{topic}'.\n\n"
+        f"REGRAS:\n"
+        f"- Entre 25 e 60 caracteres\n"
+        f"- Formato de pergunta curiosa ou afirmação impactante\n"
+        f"- Use palavras-chave que brasileiros pesquisam no YouTube\n"
+        f"- Sem hashtags, sem CAPS LOCK, sem aspas, sem emojis\n"
+        f"- Retorne APENAS o título\n\n"
+        f"CONTEÚDO DO VÍDEO:\n{fact[:800]}"
+    )
+    result = _llm_call(prompt, max_tokens=50, temperature=0.7)
+    if not result:
+        return None
+    title = result.strip().strip('"').strip("'").strip()
+    title = re.sub(r'\s+', ' ', title)
+    if 10 <= len(title) <= 100:
+        print(f"     Titulo SEO: {title}")
+        return title
+    print(f"     Aviso: titulo fora do tamanho ({len(title)} chars), usando padrao")
+    return None
+
+
+_WIKI_ARTIFACT = re.compile(
+    r'==\s*[^=]*?\s*=='     # == qualquer heading == (ex: == Referências ==)
+    r'|\[\[[^]]*\]\]'       # [[wikilinks]]
+    r'|\[[^]]*\]'           # [referencias] e [ligação inativa]
+)
+
+def _clean_script(text: str) -> str:
+    """Remove artefatos da Wikipedia e HTML entities do texto."""
+    if not text:
+        return ""
+    text = html.unescape(text)
+    text = _WIKI_ARTIFACT.sub('', text)
+    text = re.sub(r'\*+', '', text)
+    text = re.sub(r'\s+', ' ', text)
+    return text.strip()
+
+def _validate_script(text: str) -> bool:
+    """Só publica se o roteiro estiver limpo, com tamanho minimo e sem truncamento."""
+    if not text:
+        print("     Roteiro vazio")
+        return False
+    text = text.strip()
+    words = text.split()
+    if len(words) < 30:
+        print(f"     Roteiro curto demais ({len(words)} palavras) - pulando")
+        return False
+    if "==" in text or "Referências" in text or "[ligação inativa]" in text:
+        print("     Roteiro com artefatos da Wikipedia - pulando")
+        return False
+    if any(c in text for c in ("&quot;", "&amp;", "&#")):
+        print("     Roteiro com HTML entity - pulando")
+        return False
+    if "*" in text or "**" in text:
+        print("     Roteiro com asteriscos/marcação - pulando")
+        return False
+    if text[-1] not in ".!?":
+        print("     Roteiro truncado no meio da frase - pulando")
+        return False
+    return True
+
+
+def refine_script(topic: str, raw_text: str) -> str | None:
+    """Refina o roteiro via LLM. Retorna None se a LLM falhar (nao usa texto cru)."""
     prompt = (
         f"Você é um roteirista viral de Shorts com 10 milhões de inscritos. "
         f"Transforme este fato sobre '{topic}' em uma narrativa que Prenda o espectador nos primeiros 3 segundos.\n\n"
@@ -1145,43 +1329,45 @@ def refine_script(topic: str, raw_text: str) -> str:
         f"Os astrônomos estão perplexos — e a explicação pode mudar tudo que sabemos sobre o universo.'\n\n"
         f"TEXTO ORIGINAL:\n{raw_text}"
     )
-    api_url = os.getenv("LLM_API_URL", "https://integrate.api.nvidia.com/v1/chat/completions")
-    model = os.getenv("LLM_MODEL", "deepseek-ai/deepseek-v4-flash")
-    try:
-        resp = requests.post(
-            api_url,
-            headers={
-                "Authorization": f"Bearer {key}",
-                "Content-Type": "application/json",
-            },
-            json={
-                "model": model,
-                "messages": [{"role": "user", "content": prompt}],
-                "temperature": 0,
-                "max_tokens": 500,
-            },
-            timeout=30,
-        )
-        resp.raise_for_status()
-        result = resp.json()["choices"][0]["message"]["content"].strip()
-        if len(result) < len(raw_text) * 0.3:
-            print("     Aviso: roteiro muito curto, usando original")
-            return raw_text
-        print(f"     Roteiro refinado via LLM ({model})")
-        return result
-    except Exception as e:
-        print(f"     Aviso: LLM falhou ({e}), usando texto original")
-        return raw_text
+    result = _llm_call(prompt, max_tokens=500)
+    if result is None:
+        return None
+    if len(result) < len(raw_text) * 0.3:
+        print("     Aviso: roteiro muito curto (LLM), descartando")
+        return None
+    return result
 
+
+MAX_ATTEMPTS = 5
 
 async def main():
     print("[1/4] Buscando fato curioso...")
-    topic, fact = fetch_fact()
-    print(f"     Tópico: {topic}")
-    print(f"     Fato: {fact[:80]}...")
-    fact = refine_script(topic, fact)
 
-    title = f"{topic.upper()} #Shorts"
+    topic, fact = None, None
+    for attempt in range(1, MAX_ATTEMPTS + 1):
+        print(f"     --- Tentativa {attempt}/{MAX_ATTEMPTS} ---")
+        topic, raw_fact = fetch_fact()
+        print(f"     Tópico: {topic}")
+
+        score = _score_topic_virality(topic)
+        if score < VIRALITY_THRESHOLD:
+            print(f"     Topico rejeitado (viralidade {score} < {VIRALITY_THRESHOLD})")
+            continue
+
+        refined = refine_script(topic, raw_fact)
+        fact = _clean_script(refined or "")
+        if not _validate_script(fact):
+            print("     Roteiro reprovado, tentando outro topico...")
+            continue
+        print(f"     Roteiro aprovado ({len(fact.split())} palavras)")
+        break
+    else:
+        print("     Nenhum topico aprovado nesta execucao. Pulando o dia.")
+        return
+
+    seo_title = _generate_seo_title(topic, fact)
+    title = seo_title or f"{topic.upper()} #Shorts"
+    print(f"     Título final: {title}")
     tags = ["curiosidades", "vocesabia", "fatos", topic.replace(" ", ""), "conhecimento", "aprender"]
     description = (
         f"{fact}\n\n"
