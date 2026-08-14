@@ -1192,7 +1192,7 @@ def _llm_call(prompt: str, max_tokens: int, temperature: float = 0) -> str | Non
         print("     Aviso: DEEPSEEK_API_KEY nao configurado")
         return None
     api_url = os.getenv("LLM_API_URL", "https://integrate.api.nvidia.com/v1/chat/completions")
-    model = os.getenv("LLM_MODEL", "deepseek-ai/deepseek-v4-flash")
+    model = os.getenv("LLM_MODEL", "z-ai/glm-5.2")
     try:
         resp = requests.post(
             api_url,
