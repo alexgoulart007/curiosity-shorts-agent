@@ -7,6 +7,7 @@ import subprocess
 import io
 import html
 import datetime
+import time
 from pathlib import Path
 
 import numpy as np
@@ -1185,34 +1186,62 @@ def upload_short(file_path: str, title: str, description: str, tags: list[str] |
     return response
 
 
+LLM_FALLBACK_MODELS = [
+    "z-ai/glm-5.2",
+    "minimaxai/minimax-m3",
+    "nvidia/nemotron-3-ultra-550b-a55b",
+]
+
+
 def _llm_call(prompt: str, max_tokens: int, temperature: float = 0) -> str | None:
-    """Chamada generica ao LLM. Retorna texto ou None em caso de falha."""
+    """Chamada generica ao LLM. Tenta varios modelos em cadeia; retorna texto ou None."""
     key = os.getenv("DEEPSEEK_API_KEY")
     if not key:
         print("     Aviso: DEEPSEEK_API_KEY nao configurado")
         return None
     api_url = os.getenv("LLM_API_URL", "https://integrate.api.nvidia.com/v1/chat/completions")
-    model = os.getenv("LLM_MODEL", "z-ai/glm-5.2")
-    try:
-        resp = requests.post(
-            api_url,
-            headers={
-                "Authorization": f"Bearer {key}",
-                "Content-Type": "application/json",
-            },
-            json={
-                "model": model,
-                "messages": [{"role": "user", "content": prompt}],
-                "temperature": temperature,
-                "max_tokens": max_tokens,
-            },
-            timeout=30,
-        )
-        resp.raise_for_status()
-        return resp.json()["choices"][0]["message"]["content"].strip()
-    except Exception as e:
-        print(f"     Aviso: LLM falhou ({e})")
-        return None
+
+    preferido = os.getenv("LLM_MODEL", "").strip()
+    models = [preferido] if preferido else []
+    for m in LLM_FALLBACK_MODELS:
+        if m not in models:
+            models.append(m)
+
+    for model in models:
+        payload = {
+            "model": model,
+            "messages": [{"role": "user", "content": prompt}],
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+        }
+        if "nemotron" in model:
+            payload["chat_template_kwargs"] = {"enable_thinking": False}
+        try:
+            resp = requests.post(
+                api_url,
+                headers={
+                    "Authorization": f"Bearer {key}",
+                    "Content-Type": "application/json",
+                },
+                json=payload,
+                timeout=60,
+            )
+            if resp.status_code in (401, 403):
+                print("     Aviso: chave LLM invalida (401/403), abortando")
+                return None
+            if resp.status_code in (404, 410) or resp.status_code >= 500:
+                print(f"     Aviso: LLM '{model}' indisponivel ({resp.status_code}), tentando proximo...")
+                continue
+            if resp.status_code == 429:
+                print(f"     Aviso: rate limit ({resp.status_code}), aguardando 5s...")
+                time.sleep(5)
+                continue
+            resp.raise_for_status()
+            return resp.json()["choices"][0]["message"]["content"].strip()
+        except Exception as e:
+            print(f"     Aviso: LLM '{model}' falhou ({e}), tentando proximo...")
+            continue
+    return None
 
 
 VIRALITY_THRESHOLD = 7
@@ -1232,9 +1261,9 @@ def _score_topic_virality(topic: str) -> int:
     result = _llm_call(prompt, max_tokens=10)
     if result is None:
         return 10
-    m = re.search(r'(\d{1,2})', result)
+    matches = re.findall(r'\b(10|[1-9])\b', result)
     try:
-        score = max(1, min(10, int(m.group(1)))) if m else 10
+        score = max(1, min(10, int(matches[-1]))) if matches else 10
     except ValueError:
         score = 10
     print(f"     Viralidade de '{topic}': {score}/10")
