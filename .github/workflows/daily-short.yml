@@ -42,7 +42,7 @@ jobs:
           VIDEO_PRIVACY: "public"
           VIDEO_FONT: "DejaVuSans"
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
-          LLM_MODEL: "z-ai/glm-5.2"
+          LLM_MODEL: "meta/llama-3.3-70b-instruct"
           TEMA_SEMANA: ${{ vars.TEMA_SEMANA }}
         run: python src/agent.py
 

@@ -234,6 +234,23 @@ Bot automatizado que gera e publica Shorts no YouTube com fatos curiosos em port
   - `src/agent.py`: novas funções `_srt_time()`, `generate_srt()`, `upload_caption()`; `create_short()` modificada; `main()` com envio de SRT
   - `.github/workflows/daily-short.yml`: `TTS_VOICE` removido (voz agora alterna aleatoriamente)
 
+### 2026-09-03 — Fix: z-ai/glm-5.2 morto (410) + fallback LLM reescrito
+- **Problema:** O modelo `z-ai/glm-5.2` foi aposentado pela NVIDIA (HTTP 410 Gone permanentemente). O bot perdia ~2s por chamada tentando um modelo morto, e quando todos os 3 fallbacks falhavam (410 + 429 + 503), nenhum roteiro era gerado → "Pulando o dia"
+- **Diagnóstico:** Run #285 (scheduled 09h BRT) falhou em 48s — `z-ai/glm-5.2` (410), `minimax-m3` (429), `nemotron-3-ultra` (503). Run #286 (manual 15min depois) funcionou porque os fallbacks voltaram
+- **Solução:**
+  1. **`z-ai/glm-5.2` removido** de `LLM_FALLBACK_MODELS` (estava morto desde 2026-08-14, retornando 410 permanentemente)
+  2. **Novo LLM primário:** `meta/llama-3.3-70b-instruct` (confiável, amplamente usado, free tier NVIDIA)
+  3. **Fallback chain atualizada** (4 modelos em vez de 3):
+     - `meta/llama-3.3-70b-instruct` (primário)
+     - `nvidia/nemotron-3-ultra-550b-a55b` (forte, já funcionava)
+     - `deepseek-ai/deepseek-v4-flash-0731` (MoE leve, 13B ativos)
+     - `nvidia/nemotron-3.5-lightning-30b-a3b` (rápido, último recurso)
+  4. A lógica de `enable_thinking: False` para modelos nemotron continua funcionando (cheque `"nemotron" in model` pega todos os nemotron)
+- **Segurança da remoção:** `z-ai/glm-5.2` aparecia em apenas 2 locais (agent.py + workflow), retornava 410 toda vez, e nenhuma outra função dependia dele. Remoção = economia de ~2s por chamada + eliminação de falsa esperança
+- **Arquivos alterados:**
+  - `src/agent.py`: `LLM_FALLBACK_MODELS` reescrito
+  - `.github/workflows/daily-short.yml`: `LLM_MODEL` de `z-ai/glm-5.2` para `meta/llama-3.3-70b-instruct`
+
 ---
 - YouTube Data API: **10.000 unidades/dia** (~6 uploads)
 - GitHub Actions: **2000 minutos/mês** (cada execução leva ~1 min)

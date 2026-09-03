@@ -1464,9 +1464,9 @@ def upload_short(file_path: str, title: str, description: str, tags: list[str] |
 
 
 LLM_FALLBACK_MODELS = [
-    "z-ai/glm-5.2",
-    "minimaxai/minimax-m3",
     "nvidia/nemotron-3-ultra-550b-a55b",
+    "deepseek-ai/deepseek-v4-flash-0731",
+    "nvidia/nemotron-3.5-lightning-30b-a3b",
 ]
 
 
