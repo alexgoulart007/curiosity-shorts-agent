@@ -852,18 +852,27 @@ def fetch_videos(topic: str, output_dir: Path, num_clips: int = 3) -> list[str]:
         print("     Aviso: nenhum video encontrado (Pexels nem Pixabay)")
         return []
 
+    # Clipe MAIS RELEVANTE primeiro (topo da busca especifica/genérica), depois variedade.
+    # O 1º clipe abre o video e precisa combinar com o assunto; os demais complementam (sem shuffle total,
+    # que podia colocar um clipe genericofi no inicio).
     paths = []
     if pexels_videos:
-        random.shuffle(pexels_videos)
-        for i, video_data in enumerate(pexels_videos[:num_clips]):
+        ordered = list(pexels_videos)
+        picked = ordered[:num_clips]
+        rest = ordered if len(ordered) > num_clips else []
+        candidates = list(picked) + random.sample(rest, min(len(rest), num_clips))
+        for i, video_data in enumerate(candidates[:num_clips]):
             p = _pexels_download(video_data, output_dir, i)
             if p:
                 paths.append(p)
         print(f"     Baixados {len(paths)} clipes do Pexels")
 
     if not paths and pixabay_hits:
-        random.shuffle(pixabay_hits)
-        for i, hit in enumerate(pixabay_hits[:num_clips]):
+        ordered = list(pixabay_hits)
+        picked = ordered[:num_clips]
+        rest = ordered if len(ordered) > num_clips else []
+        candidates = list(picked) + random.sample(rest, min(len(rest), num_clips))
+        for i, hit in enumerate(candidates[:num_clips]):
             p = _pixabay_download(hit, output_dir, i)
             if p:
                 paths.append(p)
@@ -988,7 +997,8 @@ def _make_highlight_clip(highlight: str, font_size: int = 76,
     txt = make_text_clip(highlight, font_size=font_size, color=COR_MARCA,
                          stroke_color="black", stroke_width=4,
                          duration=duration)
-    return txt.with_position(("center", 320)).with_start(start).with_duration(duration)
+    txt = txt.with_position(("center", 320)).with_start(start).with_duration(duration)
+    return txt.with_effects([vfx.SlideIn(0.2, "top")])
 
 
 def _srt_time(seconds: float) -> str:
@@ -1060,6 +1070,10 @@ def create_short(video_paths: list[str], audio_path: str, text: str, output_path
         try:
             vp_prepared = _convert_hdr_to_sdr(vp)
             clip = VideoFileClip(vp_prepared)
+            # Remove os primeiros frames de fade-in preto / movimento morto comum em stock,
+            # que reduzem a retencao. So corta se o clipe for longo o suficiente.
+            if clip.duration >= 3.0:
+                clip = clip.subclipped(0.6, clip.duration)
             clip = _apply_zoom(clip)
             loaded.append(clip)
         except Exception as e:
@@ -1094,10 +1108,18 @@ def create_short(video_paths: list[str], audio_path: str, text: str, output_path
     txt_clips = []
     highlight_clips = []
 
-    hook_txt = make_text_clip(hook_text, font_size=56, color=COR_MARCA,
-                              stroke_color="black", stroke_width=3,
-                              duration=HOOK_DURATION)
-    hook_txt = hook_txt.with_position(("center", "center")).with_start(0).with_duration(HOOK_DURATION)
+    # FRAME 0 (tambem serve de "thumbnail" do Short): cartao escuro semi-transparente + hook grande.
+    # Limpo: um unico elemento em destaque, que some com fade-out antes do countdown (sem poluicao).
+    FRAME0_DURATION = 2.6
+    card = ColorClip(size=(1040, 560), color=(0, 0, 0)).with_opacity(0.55)
+    card = card.with_position(("center", "center")).with_start(0).with_duration(FRAME0_DURATION)
+    txt_clips.append(card)
+
+    hook_txt = make_text_clip(hook_text, font_size=60, color="white",
+                              stroke_color=COR_MARCA, stroke_width=4,
+                              duration=FRAME0_DURATION)
+    hook_txt = hook_txt.with_position(("center", "center")).with_start(0).with_duration(FRAME0_DURATION)
+    hook_txt = hook_txt.with_effects([vfx.SlideIn(0.25, "bottom")])
     txt_clips.append(hook_txt)
 
     countdown_txt = make_text_clip("3... 2... 1... ⚡", font_size=64, color=COR_MARCA,
@@ -1105,6 +1127,7 @@ def create_short(video_paths: list[str], audio_path: str, text: str, output_path
                                    duration=COUNTDOWN_DURATION)
     countdown_txt = countdown_txt.with_position(("center", "center")) \
         .with_start(HOOK_DURATION).with_duration(COUNTDOWN_DURATION)
+    countdown_txt = countdown_txt.with_effects([vfx.FadeIn(0.25)])
     txt_clips.append(countdown_txt)
 
     srt_sentences: list[str] = []
