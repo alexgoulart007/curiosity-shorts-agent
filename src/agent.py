@@ -278,13 +278,34 @@ THEMES: dict[str, list[str]] = {
     ],
 }
 
+# Peso de cada nicho baseado em dados reais do canal (media de views/video extraida 2026-09-03).
+# Nichos vencedores ganham muito mais chance de serem escolhidos -> consistencia trava no publico
+# que ja responde bem, em vez de rotacionar igualmente entre os 8 (que mistura audiencias).
+_NICHO_PESOS: dict[str, int] = {
+    "tecnologia": 30,   # media 322 (914, 624)
+    "natureza":   25,   # media 232 (977, 376, 227)
+    "animais":    22,   # media 224 (999)
+    "espaco":     12,   # media 153 (794)
+    "cultura":     4,   # media 62
+    "corpo humano": 3,  # media 45
+    "historia":    4,   # media 33 (evitado: maioria dos videos e pior desempenho)
+}
+
+
 def _active_theme() -> str:
-    """Retorna o tema da semana. Usa TEMA_SEMANA se definido, senao rotaciona pela semana ISO."""
+    """Retorna o tema da semana.
+    - Se TEMA_SEMANA estiver definido (variable do GitHub), usa EXATAMENTE ele (fixar nicho).
+    - Caso contrario, escolhe um nicho com ponderacao pelos dados de views reais:
+      os vencedores (tecnologia, natureza, animais) aparecem com muito mais frequencia.
+      Isso da consistencia ao algoritmo sem precisar configurar nada no GitHub."""
     theme = (os.getenv("TEMA_SEMANA") or "").strip().lower()
     if theme in THEMES:
         return theme
-    week = datetime.date.today().isocalendar().week
-    return THEME_ORDER[(week - 1) % len(THEME_ORDER)]
+    # Escolha ponderada pelos pesos reais de view (sem rotacao semanal uniforme)
+    pool: list[str] = []
+    for nome, peso in _NICHO_PESOS.items():
+        pool.extend([nome] * peso)
+    return random.choice(pool)
 
 _WEAK_TITLE = re.compile(
     r'^(História d[aeo]|Lista d|Certificado|Legislação|Regulamento|'
@@ -1270,28 +1291,109 @@ def _score_topic_virality(topic: str) -> int:
     return score
 
 
-def _generate_seo_title(topic: str, fact: str) -> str | None:
-    """Gera titulo SEO via LLM (pergunta curiosa). Retorna None se falhar."""
-    prompt = (
-        f"Gere um título para um YouTube Short de curiosidade sobre '{topic}'.\n\n"
-        f"REGRAS:\n"
-        f"- Entre 25 e 60 caracteres\n"
-        f"- Formato de pergunta curiosa ou afirmação impactante\n"
-        f"- Use palavras-chave que brasileiros pesquisam no YouTube\n"
-        f"- Sem hashtags, sem CAPS LOCK, sem aspas, sem emojis\n"
-        f"- Retorne APENAS o título\n\n"
-        f"CONTEÚDO DO VÍDEO:\n{fact[:800]}"
+# Padrões de título que comprovadamente geram mais views (dados reais do canal).
+# Cada template gera uma variação a partir do tópico/fato, no estilo dos vencedores:
+#   - "Peixe extinto há 66 M de anos encontrado vivo" (1000 views)
+#   - "O crocodilo brasileiro que corria na terra" (999 views)
+#   - "Por que snipers viram lixo?" (977 views)
+#   Todos usam curiosidade + surpresa/paradoxo, frases curtas, sem hashtags.
+_WINNER_TITLE_TEMPLATES = [
+    "O segredo de {topic} que ninguém conta",
+    "Por que {topic}? A resposta surpreende",
+    "A verdade sobre {topic} que você não sabia",
+    "Prepare-se: {topic} não é o que parece",
+    "A história por trás de {topic} vai te chocar",
+    "O {topic} guardava um segredo incrível",
+    "Isso sobre {topic} que espanta na internet",
+    "Você já viu {topic} assim? Impactante",
+    "O lado de {topic} que ninguém mostra",
+    "A revelação sobre {topic} que muda tudo",
+]
+
+
+def _pick_winning_title(topic: str, fact: str) -> str:
+    """Fallback determinístico: monta um título no padrão vencedor a partir do tópico."""
+    template = random.choice(_WINNER_TITLE_TEMPLATES)
+
+    # Extrai um elemento intrigante do fato (o primeiro termo "grande" encontrado)
+    hook = None
+    m = re.search(
+        r'\b(\d[\d.,]*\s*(trilhão|bilhão|milhão|mil|milhões|bilhões|trilhões|%|anos|dias|metros|kg))\b',
+        fact, re.IGNORECASE
     )
-    result = _llm_call(prompt, max_tokens=50, temperature=0.7)
-    if not result:
-        return None
-    title = result.strip().strip('"').strip("'").strip()
-    title = re.sub(r'\s+', ' ', title)
-    if 10 <= len(title) <= 100:
-        print(f"     Titulo SEO: {title}")
-        return title
-    print(f"     Aviso: titulo fora do tamanho ({len(title)} chars), usando padrao")
-    return None
+    if m:
+        hook = m.group(1).strip()
+
+    # Substitui o {topic} no template
+    title = template.format(topic=topic.title() if topic.isupper() else topic)
+
+    # Se houver um número/estatística interessante, tenta um título mais específico
+    if hook and len(title) < 70:
+        candidate = f"{topic.title()} — o {hook} que você não conhecia"
+        if 25 <= len(candidate) <= 100:
+            title = candidate
+
+    title = re.sub(r'\s+', ' ', title).strip().strip('"').strip("'")
+    return title[:100]
+
+
+def _validate_seo_title(title: str) -> bool:
+    """Garante que o título siga o padrão vencedor:
+    - Não pode ser APENAS uma palavra em MAIÚSCULAS + '#Shorts' (formato de dicionário)
+    - Não pode conter erro de gênero 'a {topic}'
+    - Deve ter tamanho razoável (10-100 chars)"""
+    if not title or len(title) < 10 or len(title) > 100:
+        return False
+    # Rejeita o formato de dicionário: "ASTEROID #Shorts", "CLIENT #Shorts"
+    if re.fullmatch(r'[A-ZÀ-Ú0-9\s]+#Shorts', title.strip()):
+        return False
+    if re.search(r'#(Shorts|shorts)$', title):
+        return False
+    # Rejeita título que é só a palavra do tópico em caps
+    if re.fullmatch(r'[A-Z0-9\s]+', title.strip()):
+        return False
+    return True
+
+
+def _generate_seo_title(topic: str, fact: str) -> str | None:
+    """Gera titulo SEO via LLM no padrão dos vídeos vencedores (curiosidade + surpresa).
+    Tenta até 3 variações; se todas falharem, usa fallback determinístico do padrão vencedor."""
+    prompt = (
+        f"Você é um especialista em títulos virais de YouTube Shorts de curiosidades.\n"
+        f"Crie UM título para o vídeo sobre '{topic}'.\n\n"
+        f"PADRÃO OBRIGATÓRIO (copie o estilo, com curiosidade + surpresa):\n"
+        f"  EXEMPLOS DE TÍTULOS QUE GERAM MUITAS VIEWS:\n"
+        f"  - 'O peixe extinto há 66 milhões de anos e que ainda está vivo'\n"
+        f"  - 'O crocodilo brasileiro que corria atrás de você na terra'\n"
+        f"  - 'Por que os snipers viram lixo florestal?'\n"
+        f"  - 'A fórmula animal usada para medir asteroides'\n"
+        f"  - 'O segredo que o oceano escondeu por 15 mil anos'\n\n"
+        f"REGRAS:\n"
+        f"- 20 a 60 caracteres\n"
+        f"- Faça UMA pergunta curiosa ('Por que...?') OU UMA afirmação com surpresa/paradoxo\n"
+        f"- Use o número/estatística do vídeo se houver (ex: '66 milhões de anos')\n"
+        f"- {topic} pode aparecer ou ficar implícito no gancho\n"
+        f"- NUNCA use o formato '{topic}.upper() + #Shorts' (isso é bait de baixa qualidade)\n"
+        f"- Sem hashtags, sem CAPS LOCK em palavra solta, sem aspas, sem emojis\n"
+        f"- Retorne APENAS o título\n\n"
+        f"CONTEÚDO DO VÍDEO:\n{fact[:900]}"
+    )
+
+    # Tenta até 3 variações; retorna a primeira que passar na validação
+    for _ in range(3):
+        result = _llm_call(prompt, max_tokens=60, temperature=0.9)
+        if result:
+            title = result.strip().strip('"').strip("'").strip()
+            title = re.sub(r'\s+', ' ', title)
+            if _validate_seo_title(title):
+                print(f"     Titulo SEO (LLM): {title}")
+                return title
+        # Se falhou na validação desta tentativa, pede de novo (novo gancho)
+
+    # Fallback determinístico no padrão dos vídeos vencedores
+    fallback = _pick_winning_title(topic, fact)
+    print(f"     Titulo SEO (fallback vencedor): {fallback}")
+    return fallback
 
 
 _WIKI_ARTIFACT = re.compile(
@@ -1395,7 +1497,7 @@ async def main():
         return
 
     seo_title = _generate_seo_title(topic, fact)
-    title = seo_title or f"{topic.upper()} #Shorts"
+    title = seo_title or _pick_winning_title(topic, fact)
     print(f"     Título final: {title}")
     tags = ["curiosidades", "vocesabia", "fatos", topic.replace(" ", ""), "conhecimento", "aprender"]
     description = (
