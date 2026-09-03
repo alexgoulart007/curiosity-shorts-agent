@@ -809,6 +809,109 @@ def _pixabay_download(hit: dict, output_dir: Path, i: int) -> str | None:
     return path
 
 
+_WIKIMEDIA_API = "https://commons.wikimedia.org/w/api.php"
+_WIKIMEDIA_UA = "CuriosityShortsBot/1.0 (youtube shorts auto-editor; contact: local)"
+
+def _search_wikimedia(query: str, limit: int = 8) -> list[dict]:
+    """Busca videos (documentarios/CC0) no Wikimedia Commons via MediaWiki API.
+    A Commons tem poucos vídeos, mas sao ideais para fatos curiosos (espaco, natureza,
+    historia, ciencia). Retorna lista com url de download + metadados."""
+    try:
+        params = {
+            "action": "query",
+            "format": "json",
+            "generator": "search",
+            "gsrsearch": f"filetype:video {query}",
+            "gsrnamespace": 6,
+            "gsrlimit": limit,
+            "prop": "imageinfo|info",
+            "iiprop": "url|size|mime|duration|extmetadata|mediatype",
+            "iiurlwidth": 640,
+        }
+        r = requests.get(_WIKIMEDIA_API, params=params, headers={"User-Agent": _WIKIMEDIA_UA}, timeout=20)
+        r.raise_for_status()
+        data = r.json()
+        pages = (data.get("query") or {}).get("pages") or {}
+        items = []
+        for page in pages.values():
+            infos = page.get("imageinfo") or []
+            if not infos:
+                continue
+            info = infos[0]
+            mime = (info.get("mime") or "").lower()
+            if not mime.startswith("video/"):
+                continue
+            duration = float(info.get("duration") or 0)
+            if duration < 5 or duration > 90:
+                continue
+            url = info.get("url") or ""
+            if not url:
+                continue
+            width = int(info.get("width") or 0)
+            height = int(info.get("height") or 0)
+            meta = info.get("extmetadata") or {}
+            license_name = ""
+            for k in ("LicenseShortName", "License"):
+                if meta.get(k, {}).get("value"):
+                    license_name = meta[k]["value"]
+                    break
+            items.append({
+                "url": url,
+                "width": width,
+                "height": height,
+                "duration": duration,
+                "license": license_name,
+                "title": page.get("title", ""),
+            })
+        print(f"     [Wikimedia] '{query}' -> {len(items)} videos")
+        return items
+    except Exception as e:
+        print(f"     [Wikimedia] Erro: {e}")
+        return []
+
+
+def _wikimedia_download(item: dict, output_dir: Path, i: int) -> str | None:
+    """Baixa video do Commons e converte (webm/ogv -> mp4) via ffmpeg se necessario."""
+    url = item.get("url", "")
+    if not url:
+        return None
+    raw_path = str(output_dir / f"wc_{i}.tmp")
+    try:
+        r = requests.get(url, headers={"User-Agent": _WIKIMEDIA_UA}, timeout=120)
+        r.raise_for_status()
+        with open(raw_path, "wb") as f:
+            f.write(r.content)
+    except Exception as e:
+        print(f"     Aviso: falha ao baixar video Wikimedia {i} ({e}), pulando...")
+        return None
+
+    out_path = str(output_dir / f"stock_{i}.mp4")
+    if os.path.exists(out_path):
+        return out_path
+    ffmpeg = _get_ffmpeg()
+    try:
+        subprocess.run(
+            [ffmpeg, "-i", raw_path, "-c:v", "libx264", "-preset", "fast", "-crf", "23",
+             "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "128k",
+             "-map_metadata", "-1", "-y", out_path],
+            capture_output=True, timeout=180)
+        if os.path.exists(out_path) and os.path.getsize(out_path) > 0:
+            print(f"     [Wikimedia] conversao ok -> stock_{i}.mp4")
+            try:
+                os.remove(raw_path)
+            except OSError:
+                pass
+            return out_path
+    except Exception as e:
+        print(f"     Aviso: falha na conversao Wikimedia {i} ({e})")
+    # falhou: limpa o temporario
+    try:
+        os.remove(raw_path)
+    except OSError:
+        pass
+    return None
+
+
 _STOPWORDS = set("""
 a o e é de do da dos das em no na nos nas por para com um uma uns umas que se não
 mais mas tão isso isto aquilo esse essa este esta aquela aquilo eles elas ele ela
@@ -875,6 +978,23 @@ def fetch_videos_for_segments(topic: str, segment_texts: list[str], output_dir: 
                             break
                     if got:
                         break
+        if not got:
+            # 3ª fonte: Wikimedia Commons (videos documentais/CC0, ideais p/ fatos curiosos).
+            # Filtra por licenca e tenta download; busca com termos mais amplos por ter video escasso.
+            wm_images = _search_wikimedia(query) or _search_wikimedia(topic)
+            for item in wm_images:
+                lic = item.get("license", "").lower()
+                if "nc" in lic or "nd" in lic:
+                    # exclui CC BY-NC / BY-ND: canal monetizado (nao-comercial / sem derivacoes)
+                    continue
+                if lic and "cc" not in lic and "public domain" not in lic:
+                    continue
+                wp = _wikimedia_download(item, output_dir, idx)
+                if wp:
+                    got = wp
+                    lic_label = item.get("license", "cc0")
+                    print(f"     Segmento {idx+1}: Wikimedia '{query}' ({lic_label}) -> ok")
+                    break
         if got:
             paths.append(got)
     return paths
