@@ -26,6 +26,7 @@ from moviepy import (
     concatenate_audioclips,
     concatenate_videoclips,
 )
+from moviepy import vfx
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request
@@ -183,6 +184,28 @@ CTA_TEXTS = [
     "🚀 Esse conhecimento mudou minha vida. E a sua?",
     "🎬 Melhor curiosidade que você vai ver hoje!",
 ]
+
+# Frases de LOOP BAIT - encerram o roteiro com um gancho que remete ao inicio,
+# incentivando o espectador a assistir de novo (cada loop = +1 view e dobra a retencao).
+# Nao sao CTA de inscricao (isso fica no texto falado final) - sao ganchos de continuidade.
+LOOP_BAIT_PHRASES = [
+    "E o mais incrível? Tudo isso começa com algo que você já viu no começo deste vídeo. Repare de novo.",
+    "Agora volte ao começo e repare como tudo se encaixa. Você vai perceber algo novo.",
+    "Essa história é ainda mais estranha do que parece. Assista de novo e veja o que você perdeu.",
+    "E se você reparar bem no início, vai entender o detalhe que muita gente deixa passar. Dá o replay.",
+]
+
+# CTA de inscricao FALADO (voz) - anexado ao final do texto narrado.
+# Convertar inscrito e a maior fraqueza do canal (0.17% vs 1-3% saudavel).
+CTA_VOICE_PHRASES = [
+    "Se você gosta de fatos surpreendentes como esse, se inscreva. Sai um novo todo dia, de graça.",
+    "Gostou? Se inscreva no canal pra não perder o próximo fato incrível. É de graça e sai todo dia.",
+    "Um fato novo surpreendente todo dia. Se inscreva aí e ative o sininho. Vale a pena.",
+    "Se você quer mais curiosidades como essa, se inscreve. Todo dia tem um fato novo te esperando.",
+]
+
+# Texto visual pulsante de CTA de inscricao (forte, na cor da marca).
+_CTA_INSCREVA_OVERLAY = "🔔 INSCREVA-SE"
 
 
 def _is_disambig(page) -> bool:
@@ -1106,12 +1129,11 @@ def create_short(video_paths: list[str], audio_path: str, text: str, output_path
         generate_srt(srt_sentences, body_start, seg_duration, srt_path)
 
     cta_start = audio_duration - CTA_DURATION
-    cta_text = random.choice(CTA_TEXTS)
-    cta_txt = make_text_clip(cta_text, font_size=40, color=COR_MARCA,
-                             stroke_color="black", stroke_width=3,
+    cta_txt = make_text_clip(_CTA_INSCREVA_OVERLAY, font_size=56, color=COR_MARCA,
+                             stroke_color="black", stroke_width=4,
                              duration=CTA_DURATION)
-    cta_txt = cta_txt.with_position(("center", "center")) \
-        .with_start(cta_start).with_duration(CTA_DURATION)
+    cta_txt = cta_txt.with_position(("center", 300)).with_start(cta_start).with_duration(CTA_DURATION)
+    cta_txt = cta_txt.with_effects([vfx.FadeIn(0.3)])
     txt_clips.append(cta_txt)
 
     final = CompositeVideoClip([video_comp] + txt_clips)
@@ -1471,6 +1493,27 @@ def refine_script(topic: str, raw_text: str) -> str | None:
 
 MAX_ATTEMPTS = 5
 
+
+def _add_loop_bait(script: str, topic: str) -> str:
+    """Anexa um gancho de LOOP BAIT ao final do roteiro narrado.
+    O gancho remete ao inicio do video, incentivando o espectador a assistir de novo
+    (cada replay conta 1 view e dobra a retencao daquele espectador)."""
+    s = script.rstrip()
+    # Evita duplicar se ja termina com um gancho de replay provocado
+    if any(p in s.lower() for p in ("assista de novo", "volte ao começo", "repare no início", "logo no início")):
+        return s
+    phrase = random.choice(LOOP_BAIT_PHRASES)
+    return f"{s}\n\n{phrase}"
+
+
+def _append_cta_voice(script: str) -> str:
+    """Anexa um CTA de inscricao FALADO ao final do texto que vai para o TTS.
+    Converte espectador em inscrito (maior fraqueza do canal)."""
+    s = script.rstrip()
+    phrase = random.choice(CTA_VOICE_PHRASES)
+    return f"{s}\n\n{phrase}"
+
+
 async def main():
     print("[1/4] Buscando fato curioso...")
 
@@ -1496,6 +1539,11 @@ async def main():
         print("     Nenhum topico aprovado nesta execucao. Pulando o dia.")
         return
 
+    # Narracao final = roteiro + LOOP BAIT (recomeco -> +views) + CTA FALADO (inscricao).
+    # Tudo isso vai para o audio e para o create_short (para legendas/timings baterem).
+    narration_text = _add_loop_bait(fact, topic)
+    narration_text = _append_cta_voice(narration_text)
+
     seo_title = _generate_seo_title(topic, fact)
     title = seo_title or _pick_winning_title(topic, fact)
     print(f"     Título final: {title}")
@@ -1510,7 +1558,7 @@ async def main():
 
     print("[2/4] Gerando áudio...")
     audio_path = str(OUTPUT_DIR / "audio.mp3")
-    submaker = await generate_audio(fact, audio_path)
+    submaker = await generate_audio(narration_text, audio_path)
 
     print("[3/4] Buscando e editando vídeo...")
     video_paths = fetch_videos(topic, OUTPUT_DIR, num_clips=3)
@@ -1524,7 +1572,7 @@ async def main():
     final_path = str(OUTPUT_DIR / "final.mp4")
     srt_path = str(OUTPUT_DIR / "legendas.srt")
     try:
-        create_short(video_paths, audio_path, fact, final_path, topic, bg_music, srt_path, submaker)
+        create_short(video_paths, audio_path, narration_text, final_path, topic, bg_music, srt_path, submaker)
     except Exception as e:
         print(f"     ERRO ao criar video: {e}")
         return
