@@ -979,21 +979,19 @@ def fetch_videos_for_segments(topic: str, segment_texts: list[str], output_dir: 
                     if got:
                         break
         if not got:
-            # 3ª fonte: Wikimedia Commons (videos documentais/CC0, ideais p/ fatos curiosos).
-            # Filtra por licenca e tenta download; busca com termos mais amplos por ter video escasso.
+            # 3ª fonte: Wikimedia Commons (videos documentais, ideais p/ fatos curiosos).
+            # CANAL MONETIZADO: aceita SOMENTE Public domain / CC0 (uso livre, sem atribuicao).
+            # Tudo que nao seja public domain ou cc0 (CC BY, BY-SA, BY-NC, BY-ND...) e rejeitado.
             wm_images = _search_wikimedia(query) or _search_wikimedia(topic)
             for item in wm_images:
                 lic = item.get("license", "").lower()
-                if "nc" in lic or "nd" in lic:
-                    # exclui CC BY-NC / BY-ND: canal monetizado (nao-comercial / sem derivacoes)
-                    continue
-                if lic and "cc" not in lic and "public domain" not in lic:
+                ok_license = ("public domain" in lic) or ("cc0" in lic)
+                if not ok_license:
                     continue
                 wp = _wikimedia_download(item, output_dir, idx)
                 if wp:
                     got = wp
-                    lic_label = item.get("license", "cc0")
-                    print(f"     Segmento {idx+1}: Wikimedia '{query}' ({lic_label}) -> ok")
+                    print(f"     Segmento {idx+1}: Wikimedia '{query}' ({item.get('license', 'cc0')}) -> ok")
                     break
         if got:
             paths.append(got)
