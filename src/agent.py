@@ -8,6 +8,7 @@ import io
 import html
 import datetime
 import time
+import math
 from pathlib import Path
 
 import numpy as np
@@ -808,6 +809,77 @@ def _pixabay_download(hit: dict, output_dir: Path, i: int) -> str | None:
     return path
 
 
+_STOPWORDS = set("""
+a o e é de do da dos das em no na nos nas por para com um uma uns umas que se não
+mais mas tão isso isto aquilo esse essa este esta aquela aquilo eles elas ele ela
+você vocês nós nossa suas seu seus sua meu minha meu minha como quando onde porque
+porque já ainda muito pouco todo toda todos todas outro outra outros outras assim
+também apenas depois antes durante sobre entre até sem há tem tinha fazer pode
+ser está estavam estava existem existe chamado chamada chamados chamadas conhecida
+conhecido chamam considerava textos texto lembrando dias vezes primeiro
+""".split())
+
+def _keyword_query(segment_text: str, topic: str, max_terms: int = 4) -> str:
+    """Monta uma query de busca a partir das palavras mais significativas do segmento,
+    garantindo que o topico sempre esteja presente (para o clipe condizer com o roteiro)."""
+    words = re.findall(r'[A-Za-zÀ-ÖØ-öø-ÿ]+', segment_text.lower())
+    important = []
+    for w in words:
+        if w in _STOPWORDS or len(w) < 4:
+            continue
+        if w not in important:
+            important.append(w)
+    if topic:
+        for tok in re.findall(r'[A-Za-zÀ-ÖØ-öø-ÿ]+', topic.lower()):
+            if len(tok) >= 4 and tok not in important:
+                important.insert(0, tok)
+    return " ".join(important[:max_terms])
+
+
+def fetch_videos_for_segments(topic: str, segment_texts: list[str], output_dir: Path) -> list[str]:
+    """Baixa 1 clipe por segmento tematico do roteiro, na ordem da narracao.
+    Retorna uma lista de paths em que o indice i corresponde ao segmento i."""
+    headers = {"Authorization": PEXELS_API_KEY}
+    base_params = {"per_page": 8, "orientation": "portrait", "min_duration": 10}
+    category = _get_category(topic)
+    fallbacks = CATEGORY_FALLBACKS.get(category, ["abstract"])
+    topic_queries = TOPIC_QUERIES.get(topic, []) or fallbacks
+
+    paths: list[str] = []
+    for idx, seg_text in enumerate(segment_texts):
+        query = _keyword_query(seg_text, topic)
+        queries = [query] + topic_queries
+        got = None
+        for q in queries:
+            params = {**base_params, "query": q}
+            videos = _search_pexels(headers, params)
+            good = [v for v in videos if v.get("duration", 0) >= 10 and v.get("width", 0) >= 720]
+            if good:
+                chosen = good[0]
+                p = _pexels_download(chosen, output_dir, idx)
+                if p:
+                    got = p
+                    print(f"     Segmento {idx+1}: '{q}' -> ok")
+                    break
+                print(f"     Segmento {idx+1}: falha download de '{q}'")
+        if not got:
+            p_params = {"per_page": 5, "orientation": "vertical"}
+            for q in queries:
+                hits = _search_pixabay({**p_params, "q": q})
+                if hits:
+                    for hit in hits:
+                        hp = _pixabay_download(hit, output_dir, idx)
+                        if hp:
+                            got = hp
+                            print(f"     Segmento {idx+1}: Pixabay '{q}' -> ok")
+                            break
+                    if got:
+                        break
+        if got:
+            paths.append(got)
+    return paths
+
+
 def fetch_videos(topic: str, output_dir: Path, num_clips: int = 3) -> list[str]:
     headers = {"Authorization": PEXELS_API_KEY}
     base_params = {"per_page": 15, "orientation": "portrait", "min_duration": 10}
@@ -1082,21 +1154,12 @@ def create_short(video_paths: list[str], audio_path: str, text: str, output_path
     if not loaded:
         raise RuntimeError("Nenhum clipe de video pode ser carregado")
 
-    video_comp = concatenate_videoclips(loaded)
-
-    loops = max(1, int(audio_duration / video_comp.duration) + 1)
-    video_comp = concatenate_videoclips([video_comp] * loops)
-    video_comp = video_comp.subclipped(0, audio_duration)
-    video_comp = video_comp.with_audio(mixed)
-    video_comp = video_comp.resized(height=1920)
-    video_comp = video_comp.cropped(x_center=video_comp.w / 2, y_center=video_comp.h / 2,
-                                    width=1080, height=1920)
-
     hook_end = text.find("\n\n")
     hook_text = text[:hook_end] if hook_end > 0 else "Você sabia?"
     body_text = text[hook_end + 2:] if hook_end > 0 else text
 
     sentences = re.split(r'(?<=[.!?])\s+', body_text)
+    sentences = [s.strip() for s in sentences if s.strip()]
 
     HOOK_DURATION = 3.5
     COUNTDOWN_DURATION = 1.5
@@ -1104,6 +1167,36 @@ def create_short(video_paths: list[str], audio_path: str, text: str, output_path
     body_start = HOOK_DURATION + COUNTDOWN_DURATION
     body_duration = max(0, audio_duration - body_start - CTA_DURATION)
     seg_duration = body_duration / max(len(sentences), 1)
+
+    # Monta o video POR SEGMENTO: cada clipe fica na tela pelo tempo do seu grupo de sentencas,
+    # na ordem do roteiro (clipe i corresponde ao trecho i). Assim a imagem condiz com a fala.
+    # Se houver mais sentencas que clipes, os clipes se repetem em grupos; o loop e feito no
+    # conjunto final (mantem o loop bait), mas a sequencia respeita a ordem do roteiro.
+    num_clips = max(1, len(loaded))
+    groups: list[list[int]] = [[] for _ in range(num_clips)]
+    for si in range(len(sentences)):
+        groups[si % num_clips].append(si)
+
+    seg_clips = []
+    for ci, clip in enumerate(loaded):
+        idxs = groups[ci] if ci < len(groups) else []
+        group_dur = sum(seg_duration for _ in idxs)
+        if group_dur <= 0.1:
+            continue
+        # estende/corta o clipe para a duracao do grupo (repetindo o proprio clipe se necessario)
+        clip_loop = concatenate_videoclips(
+            [clip.with_duration(clip.duration)] * max(1, int(group_dur / clip.duration) + 1)
+        ).subclipped(0, group_dur)
+        seg_clips.append(clip_loop)
+
+    video_comp = concatenate_videoclips(seg_clips) if seg_clips else loaded[0]
+    loops = max(1, int(audio_duration / video_comp.duration) + 1)
+    video_comp = concatenate_videoclips([video_comp] * loops)
+    video_comp = video_comp.subclipped(0, audio_duration)
+    video_comp = video_comp.with_audio(mixed)
+    video_comp = video_comp.resized(height=1920)
+    video_comp = video_comp.cropped(x_center=video_comp.w / 2, y_center=video_comp.h / 2,
+                                    width=1080, height=1920)
 
     txt_clips = []
     highlight_clips = []
@@ -1584,7 +1677,20 @@ async def main():
     submaker = await generate_audio(narration_text, audio_path)
 
     print("[3/4] Buscando e editando vídeo...")
-    video_paths = fetch_videos(topic, OUTPUT_DIR, num_clips=3)
+    # Video POR SEGMENTO do roteiro: divide o corpo em ~5-6 partes e baixa 1 clipe tematico
+    # por parte, na ordem da narracao (imagem condiz com a fala).
+    hook_end = fact.find("\n\n")
+    body_fact = fact[hook_end + 2:] if hook_end > 0 else fact
+    body_sentences = [s.strip() for s in re.split(r'(?<=[.!?])\s+', body_fact) if s.strip()]
+    target_segments = 5
+    segments: list[str] = []
+    if len(body_sentences) <= target_segments:
+        segments = body_sentences or [fact]
+    else:
+        per_seg = math.ceil(len(body_sentences) / target_segments)
+        for i in range(0, len(body_sentences), per_seg):
+            segments.append(" ".join(body_sentences[i:i + per_seg]))
+    video_paths = fetch_videos_for_segments(topic, segments, OUTPUT_DIR)
     if not video_paths:
         print("     Aviso: sem videos (Pexels e Pixabay), pulando...")
         return
