@@ -1377,7 +1377,14 @@ def create_short(video_paths: list[str], audio_path: str, text: str, output_path
     video_comp = concatenate_videoclips([video_comp] * loops)
     video_comp = video_comp.subclipped(0, audio_duration)
     video_comp = video_comp.with_audio(mixed)
-    video_comp = video_comp.resized(height=1920)
+    # Escala COVER: garante que o frame sempre preencha 1080x1920 independente do aspecto
+    # da fonte (antes so redimensionava por altura e, para fontes mais estreitas que 9:16,
+    # o corte de 1080 de largura estourava os limites -> fatia/faixa de poucos px na tela).
+    cover_scale = max(1080 / video_comp.w, 1920 / video_comp.h)
+    video_comp = video_comp.resized(
+        width=max(1080, int(round(video_comp.w * cover_scale))),
+        height=max(1920, int(round(video_comp.h * cover_scale))),
+    )
     video_comp = video_comp.cropped(x_center=video_comp.w / 2, y_center=video_comp.h / 2,
                                     width=1080, height=1920)
 

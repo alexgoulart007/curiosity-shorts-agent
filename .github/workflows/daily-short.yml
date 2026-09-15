@@ -48,6 +48,14 @@ jobs:
           TEMA_SEMANA: ${{ vars.TEMA_SEMANA }}
         run: python src/agent.py
 
+      - name: Upload final video (diagnostico)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: final-video
+          path: output/final.mp4
+          if-no-files-found: ignore
+
       - name: Save used topics
         if: success()
         env:
