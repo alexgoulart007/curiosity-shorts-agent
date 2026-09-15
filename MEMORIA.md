@@ -35,8 +35,9 @@ Bot automatizado que gera e publica Shorts no YouTube com fatos curiosos em port
 - **Melhoria de diagnóstico (fix `0402797`):** o daily-short agora publica `output/final.mp4`
   como **artefato** do run (aba Actions → rodada → Summary → `final-video`), para conferência
   visual do vídeo gerado.
-
 ---
+
+### 2026-09-15 — Entrega em produção ✅ (commit `08e3ca3`)
 - Commit `08e3ca3` "Add analytics feedback loop + Gemini LLM fallback" **pushado** para `origin/main`
   (8 arquivos; nenhum segredo versionado).
 - **Secrets atualizados** (via painel web — Settings → Secrets and variables → Actions):
