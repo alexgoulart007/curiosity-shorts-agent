@@ -42,7 +42,7 @@ jobs:
           VIDEO_PRIVACY: "public"
           VIDEO_FONT: "DejaVuSans"
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
-          LLM_MODEL: "meta/llama-3.3-70b-instruct"
+          LLM_MODEL: "deepseek-ai/deepseek-v4-flash-0731"
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GEMINI_MODEL: ${{ vars.GEMINI_MODEL }}
           TEMA_SEMANA: ${{ vars.TEMA_SEMANA }}

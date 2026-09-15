@@ -1529,8 +1529,8 @@ def upload_short(file_path: str, title: str, description: str, tags: list[str] |
 
 
 LLM_FALLBACK_MODELS = [
-    "nvidia/nemotron-3-ultra-550b-a55b",
     "deepseek-ai/deepseek-v4-flash-0731",
+    "nvidia/nemotron-3-ultra-550b-a55b",
     "nvidia/nemotron-3.5-lightning-30b-a3b",
 ]
 
@@ -1589,7 +1589,17 @@ def _nvidia_llm_call(prompt: str, max_tokens: int, temperature: float = 0) -> st
                 time.sleep(5)
                 continue
             resp.raise_for_status()
-            return resp.json()["choices"][0]["message"]["content"].strip()
+            try:
+                data = resp.json()
+                msg = (data.get("choices") or [{}])[0].get("message") or {}
+                content = msg.get("content") or msg.get("reasoning_content")
+                if isinstance(content, str) and content.strip():
+                    return content.strip()
+            except (ValueError, KeyError, TypeError, IndexError) as e:
+                print(f"     Aviso: LLM '{model}' respondeu em formato inesperado ({e}), tentando proximo...")
+                continue
+            print(f"     Aviso: LLM '{model}' respondeu vazio, tentando proximo...")
+            continue
         except Exception as e:
             print(f"     Aviso: LLM '{model}' falhou ({e}), tentando proximo...")
             continue
