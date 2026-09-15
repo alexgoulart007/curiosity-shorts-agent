@@ -14,6 +14,21 @@ Bot automatizado que gera e publica Shorts no YouTube com fatos curiosos em port
 
 ---
 
+### 2026-09-15 — Entrega em produção ✅ (commit `08e3ca3`)
+- Commit `08e3ca3` "Add analytics feedback loop + Gemini LLM fallback" **pushado** para `origin/main`
+  (8 arquivos; nenhum segredo versionado).
+- **Secrets atualizados** (via painel web — Settings → Secrets and variables → Actions):
+  - `YOUTUBE_TOKEN` → substituído pelo token regenerado em 2026-09-15 com o novo escopo
+    `youtube.readonly` (OAuth local via `auth_youtube.py`, par `client_id` 231390470527-...).
+  - `GOOGLE_CLIENT_SECRET` → reescrito com o mesmo client (confirmação da paridade token/client).
+- **Ação manual feita:** re-autorização do YouTube concluída; sem pendências.
+- **Observação:** `gh` CLI 2.100.0 instalado localmente (uso pontual desta entrega; o repo não
+  depende dele). PAT novo criado para esta entrega foi descartado (seguimos pela rota web).
+- **Aguardando:** 1ª execução do daily-short (12:00 UTC) para começar a acumular
+  `published_videos.json`; analytics recalibra nichos a partir da 2ª rodada semanal (≥2 amostras).
+
+---
+
 ### 2026-09-15 — Feedback loop de analytics + fallback LLM multi-provedor (Gemini)
 - **Motivação:** (1) os pesos de nicho e o estilo de título eram fixados por um único snapshot
   (2026-09-03) e **nunca reaprendiam** com os dados reais; (2) o pipeline dependia de um único
@@ -40,6 +55,7 @@ Bot automatizado que gera e publica Shorts no YouTube com fatos curiosos em port
 - **Ação manual necessária (1x):** rodar `python auth_youtube.py` localmente e atualizar o
   secret `YOUTUBE_TOKEN` — o novo escopo `youtube.readonly` só entra com nova autorização.
   O token existente continua funcionando para upload sem isso (só o analytics falha até renovar).
+  **✅ FEITO em 2026-09-15** (ver "Entrega em produção" acima).
 
 ---
 
