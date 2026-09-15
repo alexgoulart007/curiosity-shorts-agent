@@ -14,7 +14,29 @@ Bot automatizado que gera e publica Shorts no YouTube com fatos curiosos em port
 
 ---
 
-### 2026-09-15 — Entrega em produção ✅ (commit `08e3ca3`)
+### 2026-09-15 — Validação manual + correções pós-entrega (commits `038cc0e` e `0402797`)
+- **Run manual do daily-short validado em produção:**
+  - Vídeo publicado: `https://youtube.com/shorts/cE8Acbdz6d0` — 1º com o novo código.
+  - Confirmou em campo: `record_published` funcionando (registro salvo), `published_videos.json`
+    criado/commitado, e **Gemini carregando o dia** (NVIDIA toda fora do ar: 410/503 no run).
+- **Bug 1 (fix `038cc0e`):** `_nvidia_llm_call` quebrava com `'NoneType' has no attribute 'strip'`
+  quando o modelo respondia com `content: null` (caso do DeepSeek). Agora: trata `content` nulo/vazio e
+  aproveita `reasoning_content` como fallback; resposta inesperada/vazia não derruba a cadeia.
+- **Bug 2 (fix `038cc0e`):** o modelo preferido do workflow `meta/llama-3.3-70b-instruct` está
+  **aposentado (HTTP 410)** — era tentado em TODA chamada de LLM, desperdiçando 1 requisição cada.
+  Trocado para `deepseek-ai/deepseek-v4-flash-0731`, que agora lidera a cadeia de fallback.
+- **Bug 3 — "faixa vertical" / risco na tela (fix `0402797`):**
+  - Causa: em `create_short`, o vídeo era redimensionado **só por altura (1920)** e recortado
+    1080 de largura no centro. Para fontes mais estreitas que 9:16 (ex: `720x1366`, aspecto 0.527)
+    sobrava ~1012px de largura → o corte de 1080 estourava os limites e o moviepy emitia uma
+    **fatia de 34px × 1920** (o "risco" na tela; `stock_0` era o 1º clipe → dominava o vídeo).
+  - Fix: **escala COVER** (`scale = max(1080/w, 1920/h)`) → saída **sempre 1080×1920 exato**
+    para qualquer aspecto (portrait/paisagem/SD). Testado com os aspectos reais do log.
+- **Melhoria de diagnóstico (fix `0402797`):** o daily-short agora publica `output/final.mp4`
+  como **artefato** do run (aba Actions → rodada → Summary → `final-video`), para conferência
+  visual do vídeo gerado.
+
+---
 - Commit `08e3ca3` "Add analytics feedback loop + Gemini LLM fallback" **pushado** para `origin/main`
   (8 arquivos; nenhum segredo versionado).
 - **Secrets atualizados** (via painel web — Settings → Secrets and variables → Actions):
