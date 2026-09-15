@@ -1,0 +1,48 @@
+name: Analytics Feedback Loop
+
+on:
+  schedule:
+    # Segunda-feira 01:00 UTC = domingo 22:00 BRT (depois de uma semana completa de postagens)
+    - cron: "0 1 * * 1"
+  workflow_dispatch:
+
+jobs:
+  update-analytics:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Auth with YouTube
+        env:
+          CLIENT_SECRET_JSON: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+          YOUTUBE_TOKEN_JSON: ${{ secrets.YOUTUBE_TOKEN }}
+        run: |
+          echo "$CLIENT_SECRET_JSON" > client_secret.json
+          echo "$YOUTUBE_TOKEN_JSON" > youtube_token.json
+
+      - name: Run analytics feedback loop
+        env:
+          VIDEO_FONT: "DejaVuSans"
+        run: python src/analytics.py
+
+      - name: Commit analytics
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
+          git add -f analytics/ published_videos.json
+          git diff --cached --quiet || git commit -m "Update analytics feedback [skip ci]"
+          git remote set-url origin https://${GH_TOKEN}@github.com/alexgoulart007/curiosity-shorts-agent.git
+          git push

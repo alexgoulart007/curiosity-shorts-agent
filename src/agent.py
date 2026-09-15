@@ -126,7 +126,7 @@ FALLBACK_POOL: list[tuple[str, str]] = [
 WIKI_LANG = "pt"
 PEXELS_API_KEY = os.getenv("PEXELS_API_KEY")
 PIXABAY_API_KEY = os.getenv("PIXABAY_API_KEY")
-SCOPES = ["https://www.googleapis.com/auth/youtube.upload", "https://www.googleapis.com/auth/youtube.force-ssl"]
+SCOPES = ["https://www.googleapis.com/auth/youtube.upload", "https://www.googleapis.com/auth/youtube.force-ssl", "https://www.googleapis.com/auth/youtube.readonly"]
 YOUTUBE_TOKEN_FILE = "youtube_token.json"
 OUTPUT_DIR = Path("output")
 OUTPUT_DIR.mkdir(exist_ok=True)
@@ -305,6 +305,8 @@ THEMES: dict[str, list[str]] = {
 # Peso de cada nicho baseado em dados reais do canal (media de views/video extraida 2026-09-03).
 # Nichos vencedores ganham muito mais chance de serem escolhidos -> consistencia trava no publico
 # que ja responde bem, em vez de rotacionar igualmente entre os 8 (que mistura audiencias).
+# O job semanal `analytics-update.yml` reescreve estes pesos automaticamente a partir das views
+# reais (arquivo analytics/nicho_weights.json); este dict e apenas o fallback inicial.
 _NICHO_PESOS: dict[str, int] = {
     "tecnologia": 30,   # media 322 (914, 624)
     "natureza":   25,   # media 232 (977, 376, 227)
@@ -313,7 +315,66 @@ _NICHO_PESOS: dict[str, int] = {
     "cultura":     4,   # media 62
     "corpo humano": 3,  # media 45
     "historia":    4,   # media 33 (evitado: maioria dos videos e pior desempenho)
+    "ciencia":     4,   # sem dados historicos; analytics vai calibrar
 }
+
+ANALYTICS_WEIGHTS_FILE = Path("analytics/nicho_weights.json")
+TITLE_BIAS_FILE = Path("analytics/title_bias.json")
+PUBLISHED_FILE = Path("published_videos.json")
+
+def _load_nicho_weights() -> dict[str, int]:
+    """Pesos de nicho atualizados pelo feedback loop de analytics (se existirem)."""
+    try:
+        if ANALYTICS_WEIGHTS_FILE.exists():
+            data = json.loads(ANALYTICS_WEIGHTS_FILE.read_text(encoding="utf-8"))
+            weights = data.get("weights", {})
+            cleaned = {
+                k: max(1, int(v)) for k, v in weights.items()
+                if k in THEMES and int(v) > 0
+            }
+            if cleaned:
+                merged = dict(_NICHO_PESOS)
+                merged.update(cleaned)
+                return merged
+    except Exception as e:
+        print(f"     Aviso: nao consegui ler pesos de analytics ({e})")
+    return dict(_NICHO_PESOS)
+
+
+def _title_style_bias() -> str | None:
+    """Estilo de titulo vencedor segundo os dados reais (pergunta ou afirmacao)."""
+    try:
+        if TITLE_BIAS_FILE.exists():
+            bias = json.loads(TITLE_BIAS_FILE.read_text(encoding="utf-8")).get("bias", {})
+            if bias:
+                return max(bias, key=bias.get)
+    except Exception:
+        pass
+    return None
+
+
+def load_published() -> list[dict]:
+    """Registros dos videos publicados pelo bot (para o feedback loop de analytics)."""
+    if PUBLISHED_FILE.exists():
+        try:
+            return json.loads(PUBLISHED_FILE.read_text(encoding="utf-8"))
+        except Exception:
+            print("     Aviso: published_videos.json corrompido, iniciando vazio")
+    return []
+
+
+def record_published(video_id: str, topic: str, title: str, theme: str):
+    records = load_published()
+    records.append({
+        "video_id": video_id,
+        "topic": topic,
+        "title": title,
+        "theme": theme,
+        "published_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+    })
+    PUBLISHED_FILE.write_text(
+        json.dumps(records[-500:], ensure_ascii=False, indent=2), encoding="utf-8")
+    print(f"     Registro de publicacao salvo ({theme}/{topic})")
 
 
 def _active_theme() -> str:
@@ -321,14 +382,17 @@ def _active_theme() -> str:
     - Se TEMA_SEMANA estiver definido (variable do GitHub), usa EXATAMENTE ele (fixar nicho).
     - Caso contrario, escolhe um nicho com ponderacao pelos dados de views reais:
       os vencedores (tecnologia, natureza, animais) aparecem com muito mais frequencia.
-      Isso da consistencia ao algoritmo sem precisar configurar nada no GitHub."""
+      Isso da consistencia ao algoritmo sem precisar configurar nada no GitHub.
+    - Os pesos vem do feedback loop de analytics (analytics/nicho_weights.json) quando disponivel;
+      sem ele, usa os pesos fixos de _NICHO_PESOS."""
     theme = (os.getenv("TEMA_SEMANA") or "").strip().lower()
     if theme in THEMES:
         return theme
-    # Escolha ponderada pelos pesos reais de view (sem rotacao semanal uniforme)
+    # Escolha ponderada pelos pesos de view (atualizados por analytics automaticamente)
+    weights = _load_nicho_weights()
     pool: list[str] = []
-    for nome, peso in _NICHO_PESOS.items():
-        pool.extend([nome] * peso)
+    for nome, peso in weights.items():
+        pool.extend([nome] * max(1, peso))
     return random.choice(pool)
 
 _WEAK_TITLE = re.compile(
@@ -399,9 +463,10 @@ def _page_ok(pd: dict) -> bool:
         return False
     return True
 
-def _fetch_random_topic(api, user_agent, max_categories: int = 20) -> tuple[str, object] | tuple[None, None]:
+def _fetch_random_topic(api, user_agent, max_categories: int = 20, theme: str | None = None) -> tuple[str, object] | tuple[None, None]:
     session = requests.Session()
-    theme = _active_theme()
+    if theme is None:
+        theme = _active_theme()
     categories = THEMES.get(theme, RICH_CATEGORIES)
     print(f"     Tema da semana: {theme} ({len(categories)} categorias)")
     available = [c for c in categories if c not in _used_topics]
@@ -482,7 +547,7 @@ def _fetch_random_topic(api, user_agent, max_categories: int = 20) -> tuple[str,
     return None, None
 
 
-def fetch_fact() -> tuple[str, str]:
+def fetch_fact(theme: str | None = None) -> tuple[str, str]:
     global _used_topics
     user_agent = "CuriosityShortsAgent/1.0 (github.com/user)"
     api = wikipediaapi.Wikipedia(user_agent, WIKI_LANG)
@@ -491,7 +556,7 @@ def fetch_fact() -> tuple[str, str]:
         _used_topics = load_used_topics()
 
     print("     Buscando artigos aleatorios na Wikipedia...")
-    topic, page = _fetch_random_topic(api, user_agent)
+    topic, page = _fetch_random_topic(api, user_agent, theme=theme)
     if page:
         summary = page.summary[:2000].strip()
         summary = re.sub(r'\s+', ' ', summary)
@@ -1471,10 +1536,20 @@ LLM_FALLBACK_MODELS = [
 
 
 def _llm_call(prompt: str, max_tokens: int, temperature: float = 0) -> str | None:
-    """Chamada generica ao LLM. Tenta varios modelos em cadeia; retorna texto ou None."""
+    """Chamada generica ao LLM com cadeia MULTI-PROVEDOR:
+    tenta NVIDIA (modelos em LLM_FALLBACK_MODELS) e, se falhar, Gemini (free tier).
+    Retorna texto ou None."""
+    result = _nvidia_llm_call(prompt, max_tokens, temperature)
+    if result is not None:
+        return result
+    result = _gemini_llm_call(prompt, max_tokens, temperature)
+    return result
+
+
+def _nvidia_llm_call(prompt: str, max_tokens: int, temperature: float = 0) -> str | None:
     key = os.getenv("DEEPSEEK_API_KEY")
     if not key:
-        print("     Aviso: DEEPSEEK_API_KEY nao configurado")
+        print("     Aviso: DEEPSEEK_API_KEY nao configurado (pulando NVIDIA)")
         return None
     api_url = os.getenv("LLM_API_URL", "https://integrate.api.nvidia.com/v1/chat/completions")
 
@@ -1504,8 +1579,8 @@ def _llm_call(prompt: str, max_tokens: int, temperature: float = 0) -> str | Non
                 timeout=60,
             )
             if resp.status_code in (401, 403):
-                print("     Aviso: chave LLM invalida (401/403), abortando")
-                return None
+                print("     Aviso: chave NVIDIA invalida (401/403), tentando outros provedores")
+                break
             if resp.status_code in (404, 410) or resp.status_code >= 500:
                 print(f"     Aviso: LLM '{model}' indisponivel ({resp.status_code}), tentando proximo...")
                 continue
@@ -1519,6 +1594,37 @@ def _llm_call(prompt: str, max_tokens: int, temperature: float = 0) -> str | Non
             print(f"     Aviso: LLM '{model}' falhou ({e}), tentando proximo...")
             continue
     return None
+
+
+def _gemini_llm_call(prompt: str, max_tokens: int, temperature: float = 0) -> str | None:
+    """Fallback via API REST do Google Gemini (free tier), sem dependencia nova.
+    Config: secret GEMINI_API_KEY + (opcional) variable GEMINI_MODEL."""
+    key = os.getenv("GEMINI_API_KEY")
+    if not key:
+        return None
+    model = (os.getenv("GEMINI_MODEL") or "gemini-2.5-flash").strip()
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={key}"
+    payload = {
+        "contents": [{"parts": [{"text": prompt}]}],
+        "generationConfig": {"temperature": temperature, "maxOutputTokens": max_tokens},
+    }
+    try:
+        resp = requests.post(url, json=payload, timeout=60)
+        if resp.status_code in (429, 500, 503):
+            print(f"     Aviso: Gemini sobrecarregado ({resp.status_code}), aguardando 10s...")
+            time.sleep(10)
+            resp = requests.post(url, json=payload, timeout=60)
+        if resp.status_code in (400, 401, 403):
+            print(f"     Aviso: Gemini indisponivel ({resp.status_code}) - chave invalida/escopos")
+            return None
+        resp.raise_for_status()
+        data = resp.json()
+        text = data["candidates"][0]["content"]["parts"][0]["text"].strip()
+        print(f"     [Gemini] {model} -> ok ({len(text)} chars)")
+        return text
+    except Exception as e:
+        print(f"     Aviso: Gemini falhou ({e})")
+        return None
 
 
 VIRALITY_THRESHOLD = 7
@@ -1614,6 +1720,12 @@ def _validate_seo_title(title: str) -> bool:
 def _generate_seo_title(topic: str, fact: str) -> str | None:
     """Gera titulo SEO via LLM no padrão dos vídeos vencedores (curiosidade + surpresa).
     Tenta até 3 variações; se todas falharem, usa fallback determinístico do padrão vencedor."""
+    style_bias = _title_style_bias()
+    style_line = ""
+    if style_bias == "pergunta":
+        style_line = f"- Priorize o formato PERGUNTA ('Por que...?') — foi o que mais deu views nos seus dados\n"
+    elif style_bias == "afirmacao":
+        style_line = f"- Priorize o formato AFIRMAÇÃO com surpresa/paradoxo — foi o que mais deu views nos seus dados\n"
     prompt = (
         f"Você é um especialista em títulos virais de YouTube Shorts de curiosidades.\n"
         f"Crie UM título para o vídeo sobre '{topic}'.\n\n"
@@ -1625,6 +1737,7 @@ def _generate_seo_title(topic: str, fact: str) -> str | None:
         f"  - 'A fórmula animal usada para medir asteroides'\n"
         f"  - 'O segredo que o oceano escondeu por 15 mil anos'\n\n"
         f"REGRAS:\n"
+        f"{style_line}"
         f"- 20 a 60 caracteres\n"
         f"- Faça UMA pergunta curiosa ('Por que...?') OU UMA afirmação com surpresa/paradoxo\n"
         f"- Use o número/estatística do vídeo se houver (ex: '66 milhões de anos')\n"
@@ -1751,10 +1864,13 @@ def _append_cta_voice(script: str) -> str:
 async def main():
     print("[1/4] Buscando fato curioso...")
 
+    active_theme = _active_theme()
+    print(f"     Nicho desta execucao: {active_theme}")
+
     topic, fact = None, None
     for attempt in range(1, MAX_ATTEMPTS + 1):
         print(f"     --- Tentativa {attempt}/{MAX_ATTEMPTS} ---")
-        topic, raw_fact = fetch_fact()
+        topic, raw_fact = fetch_fact(active_theme)
         print(f"     Tópico: {topic}")
 
         score = _score_topic_virality(topic)
@@ -1832,6 +1948,8 @@ async def main():
     result = upload_short(final_path, title, description, tags, srt_path)
     print(f"     Upload OK! ID: {result['id']}")
     print(f"     Link: https://youtube.com/shorts/{result['id']}")
+
+    record_published(result["id"], topic, title, active_theme)
 
     if _used_topics:
         save_used_topics(_used_topics)

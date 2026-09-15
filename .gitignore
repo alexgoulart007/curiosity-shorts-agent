@@ -3,5 +3,7 @@ youtube_token.json
 output/
 .env
 used_topics.json
+published_videos.json
+analytics/
 bg_music/
 __pycache__/

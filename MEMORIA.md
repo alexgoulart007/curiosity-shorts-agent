@@ -14,6 +14,35 @@ Bot automatizado que gera e publica Shorts no YouTube com fatos curiosos em port
 
 ---
 
+### 2026-09-15 — Feedback loop de analytics + fallback LLM multi-provedor (Gemini)
+- **Motivação:** (1) os pesos de nicho e o estilo de título eram fixados por um único snapshot
+  (2026-09-03) e **nunca reaprendiam** com os dados reais; (2) o pipeline dependia de um único
+  provedor LLM (NVIDIA) — que já morreu 2x com modelo aposentado (HTTP 410) e derrubou o dia.
+- **Solução:**
+  1. **Registro de publicações (`record_published`)** — a cada upload, `published_videos.json`
+     guarda `video_id`, `topic`, `title`, `theme` e data (commitado no repo para persistência,
+     como `used_topics.json`).
+  2. **Novo `src/analytics.py` + workflow `analytics-update.yml`** (semanal, dom 22h BRT):
+     lê estatísticas reais via API do YouTube (`youtube.readonly`), cruza com o registro e grava:
+     - `analytics/nicho_weights.json` → pesos por média de views real (1 ponto ≈ 12 views),
+       limitado a `[1, 40]`, só recalcula nichos com ≥ 2 amostras;
+     - `analytics/title_bias.json` → estilo vencedor (pergunta vs afirmação).
+  3. **`_active_theme()` passa a consumir os pesos do arquivo** (fallback para `_NICHO_PESOS`
+     se não existir). O nicho da execução é capturado 1x no `main()` e usado nas 5 tentativas
+     (antes era re-sorteado por tentativa).
+  4. **`_generate_seo_title()`** injeta o estilo vencedor do `title_bias.json` no prompt.
+  5. **LLM multi-provedor** — `_llm_call()` tenta NVIDIA (cadeia existente) e, se falhar,
+     chama **Gemini grátis** via REST (`gemini-2.5-flash`, sem dependência nova; config
+     `GEMINI_API_KEY` + `GEMINI_MODEL` opcional).
+- **Arquivos:** `src/agent.py`, `src/analytics.py` (novo), `auth_youtube.py` (escopo
+  `youtube.readonly`), `.github/workflows/analytics-update.yml` (novo), `daily-short.yml`,
+  `.gitignore`, `.env.example`.
+- **Ação manual necessária (1x):** rodar `python auth_youtube.py` localmente e atualizar o
+  secret `YOUTUBE_TOKEN` — o novo escopo `youtube.readonly` só entra com nova autorização.
+  O token existente continua funcionando para upload sem isso (só o analytics falha até renovar).
+
+---
+
 ## Histórico de alterações
 
 ### Commit 1 — `initial commit`
