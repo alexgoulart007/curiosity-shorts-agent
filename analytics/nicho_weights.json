@@ -1,23 +1,23 @@
 {
-  "updated": "2026-10-05T06:33:25.378279+00:00",
+  "updated": "2026-10-12T06:59:01.092823+00:00",
   "weights": {
     "tecnologia": 2,
-    "natureza": 16,
+    "natureza": 15,
     "animais": 1,
     "espaco": 1,
-    "cultura": 4,
-    "corpo humano": 34,
+    "cultura": 2,
+    "corpo humano": 24,
     "historia": 4,
     "ciencia": 4
   },
   "samples": {
     "espaco": 2,
     "animais": 3,
-    "natureza": 6,
-    "corpo humano": 2,
+    "natureza": 8,
+    "corpo humano": 3,
     "historia": 0,
     "tecnologia": 3,
     "ciencia": 1,
-    "cultura": 2
+    "cultura": 3
   }
 }
