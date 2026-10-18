@@ -1536,9 +1536,10 @@ def upload_short(file_path: str, title: str, description: str, tags: list[str] |
 
 
 LLM_FALLBACK_MODELS = [
-    "deepseek-ai/deepseek-v4-flash-0731",
-    "nvidia/nemotron-3-ultra-550b-a55b",
+    "deepseek-ai/deepseek-v4.1-flash",
     "nvidia/nemotron-3.5-lightning-30b-a3b",
+    "z-ai/glm-5.3-flash",
+    "nvidia/nemotron-3-ultra-550b-a55b",
 ]
 
 
@@ -1770,6 +1771,7 @@ def _generate_seo_title(topic: str, fact: str) -> str | None:
         result = _llm_call(prompt, max_tokens=60, temperature=0.9)
         if result:
             title = result.strip().strip('"').strip("'").strip()
+            title = re.sub(r'^[-–—*•]\s+', '', title).strip()
             title = re.sub(r'\s+', ' ', title)
             if _validate_seo_title(title):
                 print(f"     Titulo SEO (LLM): {title}")
