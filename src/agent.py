@@ -1260,6 +1260,9 @@ async def generate_audio(text: str, output_path: str) -> SubMaker:
 def make_text_clip(text: str, font_size: int, color: str = "white",
                    stroke_color: str = "black", stroke_width: int = 3,
                    size: tuple = (900, None), duration: float = 3) -> TextClip:
+    # Texto vazio/whitespace gera TextClip de altura 0 -> crash de broadcast numpy
+    # no CompositeVideoClip (shapes (1920,900) e (0,900)). Fallback defensivo.
+    text = (text or "").strip() or "..."
     return TextClip(
         text=text,
         font=os.getenv("VIDEO_FONT", "Arial"),
@@ -1376,8 +1379,10 @@ def create_short(video_paths: list[str], audio_path: str, text: str, output_path
         raise RuntimeError("Nenhum clipe de video pode ser carregado")
 
     hook_end = text.find("\n\n")
-    hook_text = text[:hook_end] if hook_end > 0 else "Você sabia?"
-    body_text = text[hook_end + 2:] if hook_end > 0 else text
+    hook_text = text[:hook_end].strip() if hook_end > 0 else ""
+    body_text = text[hook_end + 2:].strip() if hook_end > 0 else text.strip()
+    if not hook_text:
+        hook_text = "Você sabia?"
 
     sentences = re.split(r'(?<=[.!?])\s+', body_text)
     sentences = [s.strip() for s in sentences if s.strip()]
@@ -1892,7 +1897,9 @@ def refine_script(topic: str, raw_text: str) -> str | None:
     if len(result) < len(raw_text) * 0.3:
         print("     Aviso: roteiro muito curto (LLM), descartando")
         return None
-    return result
+    # strip(): LLMs frequentemente retornam com \r\n ou espacos antes do hook.
+    # Sem isso, hook_text vira whitespace no create_short -> TextClip 0px -> crash numpy.
+    return result.strip()
 
 
 MAX_ATTEMPTS = 5
