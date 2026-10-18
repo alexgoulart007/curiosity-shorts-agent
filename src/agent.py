@@ -320,7 +320,13 @@ _NICHO_PESOS: dict[str, int] = {
 
 ANALYTICS_WEIGHTS_FILE = Path("analytics/nicho_weights.json")
 TITLE_BIAS_FILE = Path("analytics/title_bias.json")
+MARKET_WEIGHTS_FILE = Path("analytics/market_weights.json")
 PUBLISHED_FILE = Path("published_videos.json")
+
+# Contribuicao do mercado (canais concorrentes) no sorteio de nicho.
+# Dados proprios sempre dominam (70%); mercado calibra nicho novo antes de
+# ter 2+ videos proprios (30%). Ver src/market_research.py.
+_MARKET_MIX = 0.30
 
 def _load_nicho_weights() -> dict[str, int]:
     """Pesos de nicho atualizados pelo feedback loop de analytics (se existirem)."""
@@ -339,6 +345,37 @@ def _load_nicho_weights() -> dict[str, int]:
     except Exception as e:
         print(f"     Aviso: nao consegui ler pesos de analytics ({e})")
     return dict(_NICHO_PESOS)
+
+
+def _load_market_weights() -> dict[str, int]:
+    """Pesos de mercado (views de canais concorrentes) do market_research.py."""
+    try:
+        if MARKET_WEIGHTS_FILE.exists():
+            data = json.loads(MARKET_WEIGHTS_FILE.read_text(encoding="utf-8"))
+            weights = data.get("weights", {})
+            cleaned = {
+                k: max(1, int(v)) for k, v in weights.items()
+                if k in THEMES and int(v) > 0
+            }
+            if cleaned:
+                return cleaned
+    except Exception as e:
+        print(f"     Aviso: nao consegui ler pesos de mercado ({e})")
+    return {}
+
+
+def _mix_with_market(weights: dict[str, int]) -> dict[str, int]:
+    """Mistura pesos proprios (70%) com pesos de mercado (30%)."""
+    market = _load_market_weights()
+    if not market:
+        return weights
+    mixed = dict(weights)
+    for theme in mixed:
+        if theme in market:
+            mixed[theme] = max(1, round(
+                mixed[theme] * (1 - _MARKET_MIX) + market[theme] * _MARKET_MIX
+            ))
+    return mixed
 
 
 def _title_style_bias() -> str | None:
@@ -380,16 +417,17 @@ def record_published(video_id: str, topic: str, title: str, theme: str):
 def _active_theme() -> str:
     """Retorna o tema da semana.
     - Se TEMA_SEMANA estiver definido (variable do GitHub), usa EXATAMENTE ele (fixar nicho).
-    - Caso contrario, escolhe um nicho com ponderacao pelos dados de views reais:
-      os vencedores (tecnologia, natureza, animais) aparecem com muito mais frequencia.
-      Isso da consistencia ao algoritmo sem precisar configurar nada no GitHub.
-    - Os pesos vem do feedback loop de analytics (analytics/nicho_weights.json) quando disponivel;
-      sem ele, usa os pesos fixos de _NICHO_PESOS."""
+    - Caso contrario, escolhe um nicho com ponderacao: 70% dados proprios
+      (analytics/nicho_weights.json — views reais do canal) + 30% mercado
+      (analytics/market_weights.json — views de concorrentes validados).
+      O mercado calibra nichos novos antes de terem videos proprios.
+    - Sem os dois arquivos, cai nos pesos fixos de _NICHO_PESOS."""
     theme = (os.getenv("TEMA_SEMANA") or "").strip().lower()
     if theme in THEMES:
         return theme
-    # Escolha ponderada pelos pesos de view (atualizados por analytics automaticamente)
-    weights = _load_nicho_weights()
+    # Escolha ponderada: pesos proprios (analytics do domingo) misturados com
+    # pesos de mercado (views de concorrentes, market-research domingo 23h).
+    weights = _mix_with_market(_load_nicho_weights())
     pool: list[str] = []
     for nome, peso in weights.items():
         pool.extend([nome] * max(1, peso))

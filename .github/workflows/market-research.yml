@@ -1,0 +1,48 @@
+name: Market Research
+
+on:
+  schedule:
+    # Segunda 02:00 UTC = domingo 23:00 BRT (logo apos o analytics-update)
+    - cron: "0 2 * * 1"
+  workflow_dispatch:
+
+jobs:
+  market-research:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Auth with YouTube
+        env:
+          CLIENT_SECRET_JSON: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+          YOUTUBE_TOKEN_JSON: ${{ secrets.YOUTUBE_TOKEN }}
+        run: |
+          echo "$CLIENT_SECRET_JSON" > client_secret.json
+          echo "$YOUTUBE_TOKEN_JSON" > youtube_token.json
+
+      - name: Run market research
+        env:
+          VIDEO_FONT: "DejaVuSans"
+        run: python src/market_research.py
+
+      - name: Commit market weights
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
+          git add -f analytics/market_weights.json
+          git diff --cached --quiet || git commit -m "Update market research [skip ci]"
+          git remote set-url origin https://${GH_TOKEN}@github.com/alexgoulart007/curiosity-shorts-agent.git
+          git push

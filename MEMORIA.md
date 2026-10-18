@@ -14,6 +14,17 @@ Bot automatizado que gera e publica Shorts no YouTube com fatos curiosos em port
 
 ---
 
+### 2026-10-18 — Pesquisa de mercado: nichos calibrados por concorrentes
+- **Motivação:** o feedback loop de analytics só aprende com as views do PRÓPRIO canal — nicho novo fica com peso fixo até ter 2+ vídeos publicados. A pesquisa de mercado usa as views de canais concorrentes como termômetro do nicho antes de o bot publicar nele.
+- **Solução:**
+  1. **Novo `src/market_research.py`** — roda semanalmente (workflow `market-research.yml`, domingo 23h BRT, logo após o analytics-update): busca os últimos 50 vídeos de 5 canais concorrentes (`vocesabia`, `FatosDesconhecidos`, `CienciaTodoDia`, `MegaCurioso`, `fatoscuriosos_`), filtra só Shorts (3–60s), classifica cada título em nicho (heurística de keywords com normalização de acentos + plurais), calcula **pesos normalizados** (média do nicho / média geral × 15, limitado [1,40]) e grava `analytics/market_weights.json`. Custo: ~15 unidades de API/semana.
+  2. **`_active_theme()` no `agent.py`** agora mistura **70% dados próprios** (analytics do domingo) + **30% mercado** (`_mix_with_market()`). Dados próprios sempre dominam; mercado calibra nicho novo com peso realista. `TEMA_SEMANA` continua prioridade absoluta. Sem arquivo de mercado, fallback silencioso para os pesos próprios (comportamento anterior intacto).
+  3. **Novo workflow `.github/workflows/market-research.yml`** — cron `0 2 * * 1` (seg 02:00 UTC = dom 23:00 BRT); comita `analytics/market_weights.json` com `[skip ci]`.
+- **Segurança:** nicho com <2 Shorts no mercado não gera peso; falha de API não grava nada; títulos sem keyword são descartados.
+- **Arquivos:** `src/market_research.py` (novo), `src/agent.py` (`_load_market_weights`, `_mix_with_market`, `_active_theme`), `.github/workflows/market-research.yml` (novo).
+
+---
+
 ### 2026-09-15 — Validação manual + correções pós-entrega (commits `038cc0e` e `0402797`)
 - **Run manual do daily-short validado em produção:**
   - Vídeo publicado: `https://youtube.com/shorts/cE8Acbdz6d0` — 1º com o novo código.
