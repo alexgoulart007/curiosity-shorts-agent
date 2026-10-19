@@ -1,0 +1,30 @@
+{
+  "updated": "2026-10-19T07:20:23.155554+00:00",
+  "weights": {
+    "animais": 8,
+    "corpo humano": 7,
+    "historia": 40,
+    "tecnologia": 7,
+    "ciencia": 7,
+    "cultura": 6
+  },
+  "channels": [
+    "vocesabia",
+    "FatosDesconhecidos",
+    "CienciaTodoDia",
+    "MegaCurioso",
+    "fatoscuriosos_"
+  ],
+  "channels_analyzed": 3,
+  "videos_analyzed": 83,
+  "samples": {
+    "espaco": 1,
+    "animais": 13,
+    "natureza": 1,
+    "corpo humano": 4,
+    "historia": 7,
+    "tecnologia": 3,
+    "ciencia": 15,
+    "cultura": 7
+  }
+}
