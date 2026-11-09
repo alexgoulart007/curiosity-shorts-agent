@@ -1,13 +1,13 @@
 {
-  "updated": "2026-11-02T08:54:19.441344+00:00",
+  "updated": "2026-11-09T09:09:10.558506+00:00",
   "weights": {
-    "animais": 6,
-    "natureza": 5,
-    "corpo humano": 6,
+    "espaco": 36,
+    "animais": 4,
+    "natureza": 3,
+    "corpo humano": 4,
     "historia": 40,
-    "tecnologia": 7,
-    "ciencia": 7,
-    "cultura": 4
+    "ciencia": 5,
+    "cultura": 1
   },
   "channels": [
     "vocesabia",
@@ -17,15 +17,15 @@
     "fatoscuriosos_"
   ],
   "channels_analyzed": 3,
-  "videos_analyzed": 81,
+  "videos_analyzed": 77,
   "samples": {
-    "espaco": 1,
-    "animais": 9,
+    "espaco": 2,
+    "animais": 7,
     "natureza": 3,
     "corpo humano": 7,
     "historia": 7,
-    "tecnologia": 3,
+    "tecnologia": 1,
     "ciencia": 14,
-    "cultura": 5
+    "cultura": 3
   }
 }
