@@ -1378,11 +1378,22 @@ def create_short(video_paths: list[str], audio_path: str, text: str, output_path
     if not loaded:
         raise RuntimeError("Nenhum clipe de video pode ser carregado")
 
-    hook_end = text.find("\n\n")
-    hook_text = text[:hook_end].strip() if hook_end > 0 else ""
-    body_text = text[hook_end + 2:].strip() if hook_end > 0 else text.strip()
+    # Gancho = primeira frase do roteiro. NAO usar text.find("\n\n"): _clean_script()
+    # colapsa todos os \n em espaco, entao o unico "\n\n" e o do loop bait/CTA, o que
+    # fazia o gancho virar o roteiro inteiro (TextClip de ~3600px -> crash no compositor).
+    hook_match = re.match(r'\s*(.+?[.!?])(?=\s|$)', text)
+    if hook_match:
+        hook_text = hook_match.group(1).strip()
+        body_text = text[hook_match.end():].strip()
+    else:
+        hook_text = text.strip()
+        body_text = ""
     if not hook_text:
         hook_text = "Você sabia?"
+    # Limita o texto EXIBIDO do gancho para nunca estourar a tela (o audio segue completo).
+    hook_display = hook_text
+    if len(hook_display) > 140:
+        hook_display = hook_display[:140].rsplit(" ", 1)[0].rstrip(",;:-") + "..."
 
     sentences = re.split(r'(?<=[.!?])\s+', body_text)
     sentences = [s.strip() for s in sentences if s.strip()]
@@ -1441,11 +1452,14 @@ def create_short(video_paths: list[str], audio_path: str, text: str, output_path
     card = card.with_position(("center", "center")).with_start(0).with_duration(FRAME0_DURATION)
     txt_clips.append(card)
 
-    hook_txt = make_text_clip(hook_text, font_size=60, color="white",
+    hook_txt = make_text_clip(hook_display, font_size=60, color="white",
                               stroke_color=COR_MARCA, stroke_width=4,
                               duration=FRAME0_DURATION)
     hook_txt = hook_txt.with_position(("center", "center")).with_start(0).with_duration(FRAME0_DURATION)
-    hook_txt = hook_txt.with_effects([vfx.SlideIn(0.25, "bottom")])
+    # SlideIn("bottom") poe o topo do clipe em y=altura_clip no t=0; se o clipe for mais
+    # alto que a tela (1920), o compositor de MASCARA quebra (broadcast numpy). Guarda.
+    if hook_txt.h < 1800:
+        hook_txt = hook_txt.with_effects([vfx.SlideIn(0.25, "bottom")])
     txt_clips.append(hook_txt)
 
     countdown_txt = make_text_clip("3... 2... 1... ⚡", font_size=64, color=COR_MARCA,
