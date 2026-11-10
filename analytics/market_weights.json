@@ -1,13 +1,10 @@
 {
-  "updated": "2026-11-09T09:09:10.558506+00:00",
+  "updated": "2026-11-10T01:24:13.247988+00:00",
   "weights": {
-    "espaco": 36,
-    "animais": 4,
-    "natureza": 3,
-    "corpo humano": 4,
-    "historia": 40,
-    "ciencia": 5,
-    "cultura": 1
+    "animais": 17,
+    "corpo humano": 15,
+    "historia": 10,
+    "ciencia": 18
   },
   "channels": [
     "vocesabia",
@@ -22,7 +19,7 @@
     "espaco": 2,
     "animais": 7,
     "natureza": 3,
-    "corpo humano": 7,
+    "corpo humano": 8,
     "historia": 7,
     "tecnologia": 1,
     "ciencia": 14,
