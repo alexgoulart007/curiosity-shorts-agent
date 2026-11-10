@@ -1,7 +1,13 @@
 {
-  "updated": "2026-11-09T07:39:58.052221+00:00",
+  "updated": "2026-11-10T01:21:30.891830+00:00",
+  "metric": "median_views",
   "bias": {
-    "pergunta": 129.8,
-    "afirmacao": 21.9
-  }
+    "pergunta": 46.0,
+    "afirmacao": 9.0
+  },
+  "samples": {
+    "pergunta": 39,
+    "afirmacao": 8
+  },
+  "winner": "pergunta"
 }
