@@ -48,11 +48,12 @@ COMPETITOR_CHANNELS = [
     "fatoscuriosos_",      # Fatos Curiosos (~3M) — 99% Shorts, formato proximo
 ]
 
-MIN_SAMPLES = 2        # videos minimos por nicho para gerar peso
+MIN_SAMPLES = 5        # videos minimos por nicho para gerar peso
 MAX_VIDEOS_PER_CHANNEL = 50
 BASE_MARKET_WEIGHT = 15  # ratio 1.0 (nicho na media do mercado) -> peso 15
 MIN_WEIGHT = 1
 MAX_WEIGHT = 40
+SHRINKAGE_K = 3        # puxa ratios extremos para 1.0 quando ha pouca amostra
 SHORT_MAX_SECONDS = 60
 SHORT_MIN_SECONDS = 3
 
@@ -220,24 +221,43 @@ def _fetch_channel_shorts(youtube, handle: str, limit: int) -> list[dict]:
     return shorts
 
 
+def _median(values: list[float]) -> float:
+    if not values:
+        return 0.0
+    ordered = sorted(values)
+    mid = len(ordered) // 2
+    if len(ordered) % 2:
+        return float(ordered[mid])
+    return (ordered[mid - 1] + ordered[mid]) / 2.0
+
+
 def _compute_market_weights(per_theme: dict) -> dict:
-    """Pesos NORMALIZADOS: media do nicho / media geral * BASE_MARKET_WEIGHT.
+    """Pesos NORMALIZADOS: mediana do nicho / mediana geral * BASE_MARKET_WEIGHT.
 
     Canais grandes tem views na casa dos milhoes — escala absoluta estouraria
     o limite de peso. A razao relativa entre nichos e o que importa.
+
+    Mediana (em vez de media) evita que 1 viral distorca o nicho; shrinkage
+    puxa ratios extremos para 1.0 quando a amostra e pequena (ex: espaco com
+    2 videos nao vira peso 36).
     """
-    avgs = {
-        theme: sum(info["views"]) / info["count"]
+    medians = {
+        theme: _median(info["views"])
         for theme, info in per_theme.items()
         if info["count"] >= MIN_SAMPLES and info["views"]
     }
-    if not avgs:
+    if not medians:
         return {}
-    overall = sum(avgs.values()) / len(avgs)
+    overall = sum(medians.values()) / len(medians)
     weights = {}
-    for theme, avg in avgs.items():
-        ratio = avg / overall if overall else 1.0
-        weights[theme] = max(MIN_WEIGHT, min(MAX_WEIGHT, round(ratio * BASE_MARKET_WEIGHT)))
+    for theme, med in medians.items():
+        ratio = med / overall if overall else 1.0
+        n = per_theme[theme]["count"]
+        shrunk_ratio = (n * ratio + SHRINKAGE_K * 1.0) / (n + SHRINKAGE_K)
+        weights[theme] = max(
+            MIN_WEIGHT,
+            min(MAX_WEIGHT, int(round(shrunk_ratio * BASE_MARKET_WEIGHT))),
+        )
     return weights
 
 

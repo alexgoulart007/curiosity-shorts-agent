@@ -302,20 +302,18 @@ THEMES: dict[str, list[str]] = {
     ],
 }
 
-# Peso de cada nicho baseado em dados reais do canal (media de views/video extraida 2026-09-03).
-# Nichos vencedores ganham muito mais chance de serem escolhidos -> consistencia trava no publico
-# que ja responde bem, em vez de rotacionar igualmente entre os 8 (que mistura audiencias).
-# O job semanal `analytics-update.yml` reescreve estes pesos automaticamente a partir das views
-# reais (arquivo analytics/nicho_weights.json); este dict e apenas o fallback inicial.
+# Prior NEUTRO usado apenas quando analytics/nicho_weights.json nao existe.
+# Os pesos reais vem do feedback loop (src/analytics.py); um prior neutro evita
+# que dados velhos (ex: corpo humano=3 de 2026-09-03) distorcam o shrinkage.
 _NICHO_PESOS: dict[str, int] = {
-    "tecnologia": 30,   # media 322 (914, 624)
-    "natureza":   25,   # media 232 (977, 376, 227)
-    "animais":    22,   # media 224 (999)
-    "espaco":     12,   # media 153 (794)
-    "cultura":     4,   # media 62
-    "corpo humano": 3,  # media 45
-    "historia":    4,   # media 33 (evitado: maioria dos videos e pior desempenho)
-    "ciencia":     4,   # sem dados historicos; analytics vai calibrar
+    "tecnologia": 10,
+    "natureza": 10,
+    "animais": 10,
+    "espaco": 10,
+    "cultura": 10,
+    "corpo humano": 10,
+    "historia": 10,
+    "ciencia": 10,
 }
 
 ANALYTICS_WEIGHTS_FILE = Path("analytics/nicho_weights.json")
@@ -379,10 +377,18 @@ def _mix_with_market(weights: dict[str, int]) -> dict[str, int]:
 
 
 def _title_style_bias() -> str | None:
-    """Estilo de titulo vencedor segundo os dados reais (pergunta ou afirmacao)."""
+    """Estilo de titulo vencedor segundo os dados reais (pergunta ou afirmacao).
+
+    Prefere o campo `winner` (so gravado quando os dois estilos tem amostra
+    suficiente). Arquivos antigos, sem `winner`, caem no maior `bias`.
+    """
     try:
         if TITLE_BIAS_FILE.exists():
-            bias = json.loads(TITLE_BIAS_FILE.read_text(encoding="utf-8")).get("bias", {})
+            data = json.loads(TITLE_BIAS_FILE.read_text(encoding="utf-8"))
+            winner = data.get("winner")
+            if winner in ("pergunta", "afirmacao"):
+                return winner
+            bias = data.get("bias", {})
             if bias:
                 return max(bias, key=bias.get)
     except Exception:
