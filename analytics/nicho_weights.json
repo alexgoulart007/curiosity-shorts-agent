@@ -1,25 +1,25 @@
 {
-  "updated": "2026-11-10T01:21:30.891830+00:00",
+  "updated": "2026-11-16T07:39:47.896384+00:00",
   "metric": "median_views_per_day",
   "weights": {
     "espaco": 5,
-    "animais": 5,
-    "natureza": 4,
-    "corpo humano": 8,
-    "historia": 6,
-    "tecnologia": 5,
-    "ciencia": 9,
-    "cultura": 6
+    "animais": 4,
+    "natureza": 5,
+    "corpo humano": 7,
+    "historia": 7,
+    "tecnologia": 6,
+    "ciencia": 8,
+    "cultura": 5
   },
   "samples": {
-    "espaco": 4,
-    "animais": 3,
-    "natureza": 14,
-    "corpo humano": 10,
+    "espaco": 5,
+    "animais": 6,
+    "natureza": 15,
+    "corpo humano": 12,
     "historia": 4,
     "tecnologia": 4,
-    "ciencia": 2,
-    "cultura": 6
+    "ciencia": 4,
+    "cultura": 9
   },
   "prior": 10,
   "shrinkage_k": 3,
