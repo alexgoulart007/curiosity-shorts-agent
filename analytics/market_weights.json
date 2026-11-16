@@ -1,10 +1,10 @@
 {
-  "updated": "2026-11-10T01:24:13.247988+00:00",
+  "updated": "2026-11-16T09:01:45.094970+00:00",
   "weights": {
-    "animais": 17,
-    "corpo humano": 15,
-    "historia": 10,
-    "ciencia": 18
+    "animais": 14,
+    "corpo humano": 16,
+    "historia": 11,
+    "ciencia": 19
   },
   "channels": [
     "vocesabia",
@@ -17,12 +17,12 @@
   "videos_analyzed": 77,
   "samples": {
     "espaco": 2,
-    "animais": 7,
-    "natureza": 3,
+    "animais": 6,
+    "natureza": 4,
     "corpo humano": 8,
     "historia": 7,
-    "tecnologia": 1,
+    "tecnologia": 0,
     "ciencia": 14,
-    "cultura": 3
+    "cultura": 2
   }
 }
