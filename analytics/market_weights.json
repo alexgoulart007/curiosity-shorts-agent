@@ -1,5 +1,5 @@
 {
-  "updated": "2026-11-16T09:01:45.094970+00:00",
+  "updated": "2026-11-23T10:19:46.659585+00:00",
   "weights": {
     "animais": 14,
     "corpo humano": 16,
@@ -14,10 +14,10 @@
     "fatoscuriosos_"
   ],
   "channels_analyzed": 3,
-  "videos_analyzed": 77,
+  "videos_analyzed": 78,
   "samples": {
-    "espaco": 2,
-    "animais": 6,
+    "espaco": 1,
+    "animais": 7,
     "natureza": 4,
     "corpo humano": 8,
     "historia": 7,
